@@ -276,26 +276,28 @@ def main(argv):
     logging.info("Start the training process...")
 
     # setup checkpoints manager
-    checkpoint = tf.train.Checkpoint(
-      step=tf.Variable(1), optimizer=optimizer, model=model)
-    manager = tf.train.CheckpointManager(
-        checkpoint, directory=FLAGS.checkpoints_dir, max_to_keep=5
-    )
-    # restore from latest checkpoint and iteration
-    status = checkpoint.restore(manager.latest_checkpoint)
-    if manager.latest_checkpoint:
-        logging.info("Restored from {}".format(manager.latest_checkpoint))
-    else:
-        if FLAGS.pretrained_checkpoints != '':
-          feature_extractor_model = tf.train.Checkpoint(
-            backbone=model.backbone)
-          ckpt = tf.train.Checkpoint(model=feature_extractor_model)
-          ckpt.restore(FLAGS.pretrained_checkpoints).\
-            expect_partial().assert_existing_objects_matched()
-          logging.info("Backbone restored from {}".format(
-            FLAGS.pretrained_checkpoints))
-        else:
-          logging.info("Initializing from scratch.")
+    with mirrored_strategy.scope():
+      checkpoint = tf.train.Checkpoint(
+        step=tf.Variable(1), optimizer=optimizer, model=model)
+      manager = tf.train.CheckpointManager(
+          checkpoint, directory=FLAGS.checkpoints_dir, max_to_keep=5
+      )
+      # restore from latest checkpoint and iteration
+      status = checkpoint.restore(manager.latest_checkpoint)
+      
+      if manager.latest_checkpoint:
+          logging.info("Restored from {}".format(manager.latest_checkpoint))
+      else:
+          if FLAGS.pretrained_checkpoints != '':
+            feature_extractor_model = tf.train.Checkpoint(
+              backbone=model.backbone)
+            ckpt = tf.train.Checkpoint(model=feature_extractor_model)
+            ckpt.restore(FLAGS.pretrained_checkpoints).\
+              expect_partial().assert_existing_objects_matched()
+            logging.info("Backbone restored from {}".format(
+              FLAGS.pretrained_checkpoints))
+          else:
+            logging.info("Initializing from scratch.")
 
     # COCO evalator for showing MAP
     coco_evaluator = coco_evaluation.CocoMaskEvaluator(
