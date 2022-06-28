@@ -28,6 +28,7 @@ tf.random.set_seed(123)
 physical_devices = tf.config.list_physical_devices('GPU')
 try:
         tf.config.experimental.set_memory_growth(physical_devices[0], True)
+        tf.config.experimental.set_memory_growth(physical_devices[1], True)
 except:
         print("Invalid device or cannot modify virtual devices once initialized.")
         pass
@@ -134,10 +135,18 @@ def main(argv):
         finally:
             tf.config.optimizer.set_experimental_options(old_opts)
 
-    config = Config()
-    config.display()
-    model = MaskED(config)
 
+    mirrored_strategy = tf.distribute.MirroredStrategy()    
+
+    with mirrored_strategy.scope():
+        config = Config()
+        config.display()
+        model = MaskED(config)
+
+    BATCH_SIZE_PER_REPLICA = config.BATCH_SIZE
+    global_batch_size = (BATCH_SIZE_PER_REPLICA *
+                     mirrored_strategy.num_replicas_in_sync)
+    
     # -----------------------------------------------------------------
     # Creating dataloaders for training and validation
     logging.info("Creating the training dataloader from: %s..." % \
@@ -146,8 +155,9 @@ def main(argv):
       config, 
       tfrecord_dir=FLAGS.tfrecord_train_dir,
       feature_map_size=model.feature_map_size,
-      batch_size=config.BATCH_SIZE,
+      batch_size=global_batch_size,
       subset='train')
+    train_dataset_dist = mirrored_strategy.experimental_distribute_dataset(train_dataset)
 
     logging.info("Creating the validation dataloader from: %s..." % \
       FLAGS.tfrecord_val_dir)
@@ -155,7 +165,7 @@ def main(argv):
       config,
       tfrecord_dir=FLAGS.tfrecord_val_dir,
       feature_map_size=model.feature_map_size,
-      batch_size=1,
+      batch_size=config.BATCH_SIZE,
       subset='val')
     
     # -----------------------------------------------------------------
@@ -200,21 +210,19 @@ def main(argv):
         optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM, clipnorm=config.GRADIENT_CLIP_NORM)
       else:
         optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM)
-    elif config.OPTIMIZER == 'AdamW':
-      logging.info("Using AdamW optimizer")
+    elif config.OPTIMIZER == 'Adam':
+      logging.info("Using Adam optimizer")
       lr_schedule = learning_rate_schedule.LearningRateSchedule(
         warmup_steps=config.N_WARMUP_STEPS, 
         warmup_lr=config.WARMUP_LR,
         initial_lr=config.LEARNING_RATE, 
         total_steps=config.LR_TOTAL_STEPS)
       if config.GRADIENT_CLIP_NORM is not None:
-        optimizer = tfa.optimizers.AdamW(
-          learning_rate=lr_schedule, 
-          weight_decay=config.WEIGHT_DECAY, clipnorm=10)
+        optimizer = tf.keras.optimizers.Adam(
+          learning_rate=lr_schedule, clipnorm=10)
       else:
-        optimizer = tfa.optimizers.AdamW(
-          learning_rate=lr_schedule, 
-          weight_decay=config.WEIGHT_DECAY)
+        optimizer = tf.keras.optimizers.Adam(
+          learning_rate=lr_schedule)
 
     criterion = loss.Loss(config)
     train_loss = tf.keras.metrics.Mean('train_loss', dtype=tf.float32)
@@ -296,13 +304,7 @@ def main(argv):
     best_val = 1e10
     iterations = checkpoint.step.numpy()
 
-    for image, labels in train_dataset:
-        # check iteration and change the learning rate
-        if iterations > config.TRAIN_ITER:
-            break
-
-        checkpoint.step.assign_add(1)
-        iterations += 1
+    def train_step(image, labels):
         with options({'constant_folding': True,
                       'layout_optimize': True,
                       'loop_optimization': True,
@@ -312,13 +314,36 @@ def main(argv):
                 output = model(image, training=True)
 
                 loc_loss, conf_loss, mask_loss, mask_iou_loss, \
-                total_loss = criterion(model, output, labels, config.NUM_CLASSES+1, image)
+                    = criterion(model, output, labels, config.NUM_CLASSES+1, image)
 
+
+                loc_loss = tf.nn.compute_average_loss(loc_loss, global_batch_size=global_batch_size)
+                conf_loss = tf.nn.compute_average_loss(conf_loss, global_batch_size=global_batch_size)
+                mask_loss = tf.nn.compute_average_loss(mask_loss, global_batch_size=global_batch_size)
+                mask_iou_loss = tf.nn.compute_average_loss(mask_iou_loss, global_batch_size=global_batch_size)
+    
+                total_loss = loc_loss + conf_loss + mask_loss + mask_iou_loss
             grads = tape.gradient(total_loss, model.trainable_variables)
-            global_norm.update_state(tf.linalg.global_norm(grads))
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
-            train_loss.update_state(total_loss)
+            return (loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads)
 
+    @tf.function
+    def distributed_train_step(image, labels):
+        per_replica_losses = mirrored_strategy.run(train_step, args=(image, labels,))
+        return mirrored_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
+                         axis=None)
+
+    for image, labels in train_dataset_dist:
+        # check iteration and change the learning rate
+        if iterations > config.TRAIN_ITER:
+            break
+
+        checkpoint.step.assign_add(1)
+        iterations += 1
+
+        loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads = distributed_train_step(image, labels)
+        global_norm.update_state(tf.linalg.global_norm(grads))
+        train_loss.update_state(total_loss)
         loc.update_state(loc_loss)
         conf.update_state(conf_loss)
         mask.update_state(mask_loss)
@@ -381,59 +406,58 @@ def main(argv):
                     output = model(valid_image, training=False)
 
                     valid_loc_loss, valid_conf_loss, valid_mask_loss, \
-                    valid_mask_iou_loss, valid_total_loss = \
+                    valid_mask_iou_loss = \
                     criterion(model, output, valid_labels, config.NUM_CLASSES+1)
 
+                    valid_total_loss = sum(valid_loc_loss + valid_conf_loss + valid_mask_loss + valid_mask_iou_loss)
                     valid_loss.update_state(valid_total_loss)
 
                     _h = valid_image.shape[1]
                     _w = valid_image.shape[2]
                     
-                    gt_num_box = valid_labels['num_obj'][0].numpy()
-                    gt_boxes = valid_labels['boxes_norm'][0][:gt_num_box]
-                    gt_boxes = gt_boxes.numpy()*np.array([_h,_w,_h,_w])
-                    gt_classes = valid_labels['classes'][0][:gt_num_box].numpy()
-                    gt_masks = valid_labels['mask_target'][0][:gt_num_box].numpy()
+                    for b in range(config.BATCH_SIZE):
+                        gt_num_box = valid_labels['num_obj'][b].numpy()
+                        gt_boxes = valid_labels['boxes_norm'][b][:gt_num_box]
+                        gt_boxes = gt_boxes.numpy()*np.array([_h,_w,_h,_w])
+                        gt_classes = valid_labels['classes'][b][:gt_num_box].numpy()
+                        gt_masks = valid_labels['mask_target'][b][:gt_num_box].numpy().astype("uint8")
 
-                    gt_masked_image = np.zeros((gt_num_box, _h, _w))
-                    for _b in range(gt_num_box):
-                        _mask = gt_masks[_b].astype("uint8")
-                        _mask = cv2.resize(_mask, (_w, _h))
-                        gt_masked_image[_b] = _mask
+                        coco_evaluator.add_single_ground_truth_image_info(
+                            image_id='image'+str(valid_iter),
+                            groundtruth_dict={
+                              standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
+                              standard_fields.InputDataFields.groundtruth_classes: gt_classes,
+                              standard_fields.InputDataFields.groundtruth_instance_masks: gt_masks
+                            })
 
-                    coco_evaluator.add_single_ground_truth_image_info(
-                        image_id='image'+str(valid_iter),
-                        groundtruth_dict={
-                          standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
-                          standard_fields.InputDataFields.groundtruth_classes: gt_classes,
-                          standard_fields.InputDataFields.groundtruth_instance_masks: gt_masked_image
-                        })
+                        det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.05)
 
-                    det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.05)
+                        det_boxes = output['detection_boxes'][b][:det_num]
+                        det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
+                        det_masks = output['detection_masks'][b][:det_num]
+                        det_masks =  tf.image.resize(det_masks, [config.MASK_SHAPE[0], config.MASK_SHAPE[1]], 
+                                method=tf.image.ResizeMethod.BILINEAR).numpy()
+                        det_masks = (det_masks > 0.5).astype("uint8")
 
-                    det_boxes = output['detection_boxes'][0][:det_num]
-                    det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
-                    det_masks = output['detection_masks'][0][:det_num].numpy()
-                    det_masks = (det_masks > 0.5)
+                        det_scores = output['detection_scores'][b][:det_num].numpy()
+                        det_classes = output['detection_classes'][b][:det_num].numpy()
 
-                    det_scores = output['detection_scores'][0][:det_num].numpy()
-                    det_classes = output['detection_classes'][0][:det_num].numpy()
-
-                    det_masked_image = np.zeros((det_num, _h, _w))
-                    for _b in range(det_num):
-                        _mask = det_masks[_b].astype("uint8")
-                        _mask = cv2.resize(_mask, (_w, _h))
-                        det_masked_image[_b] = _mask
-
-                    coco_evaluator.add_single_detected_image_info(
-                        image_id='image'+str(valid_iter),
-                        detections_dict={
-                            standard_fields.DetectionResultFields.detection_boxes: det_boxes,
-                            standard_fields.DetectionResultFields.detection_scores: det_scores,
-                            standard_fields.DetectionResultFields.detection_classes: det_classes,
-                            standard_fields.DetectionResultFields.detection_masks: det_masked_image
-                        })
-
+                        det_masked_image = np.zeros((det_num, det_masks.shape[1], det_masks.shape[2]))
+                        for _b in range(det_num):
+                            _c = det_classes[_b] - 1
+                            _m = det_masks[_b][:, :, _c]
+                            det_masked_image[_b] = _m
+                        
+                        coco_evaluator.add_single_detected_image_info(
+                            image_id='image'+str(valid_iter),
+                            detections_dict={
+                                standard_fields.DetectionResultFields.detection_boxes: det_boxes,
+                                standard_fields.DetectionResultFields.detection_scores: det_scores,
+                                standard_fields.DetectionResultFields.detection_classes: det_classes,
+                                standard_fields.DetectionResultFields.detection_masks: det_masked_image
+                            })
+                from IPython import embed
+                embed()
                 v_loc.update_state(valid_loc_loss)
                 v_conf.update_state(valid_conf_loss)
                 v_mask.update_state(valid_mask_loss)

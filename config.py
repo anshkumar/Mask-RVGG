@@ -18,7 +18,7 @@ class Config(object):
     BASE_MODEL_TRAINABLE = True
     FREEZE_BACKBONE_BN = True
 
-    BATCH_SIZE = 4
+    BATCH_SIZE = 8 # Batch size per GPU
     # (Height, Width, Channels)
     # [512, 640, 768, 896, 1024, 1280, 1408]
     IMAGE_SHAPE = [512, 512, 3]
@@ -72,19 +72,19 @@ class Config(object):
     #     None: Train BN layers. This is the normal mode
     #     False: Freeze BN layers. Good when using a small batch size
     #     True: (don't use). Set layer in training mode even when predicting
-    TRAIN_BN = False  # Defaulting to False since batch size is often small
+    TRAIN_BN = True  # Defaulting to False since batch size is often small
 
     # Loss weights for more precise optimization.
     # Can be used for R-CNN training setup.
     LOSS_WEIGHTS = {
-        "loss_weight_cls": 2.,
+        "loss_weight_cls": 1.,
         "loss_weight_box": 1.,
-        "loss_weight_mask": 4.,
-        "loss_weight_mask_iou": 5.,
+        "loss_weight_mask": 1.,
+        "loss_weight_mask_iou": 1.,
     }
 
     # Allowed are : ['OHEM', 'FOCAL', 'CROSSENTROPY']
-    LOSS_CLASSIFICATION = 'OHEM'
+    LOSS_CLASSIFICATION = 'FOCAL'
 
     NEG_POS_RATIO = 3
     MAX_MASKS_FOR_TRAIN = 100
@@ -95,7 +95,7 @@ class Config(object):
     # weights to explode. Likely due to differences in optimizer
     # implementation.
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW']
-    OPTIMIZER = 'SGD'
+    OPTIMIZER = 'Adam'
     LEARNING_RATE = 1e-3
     N_WARMUP_STEPS = 500
     WARMUP_LR = 1e-4

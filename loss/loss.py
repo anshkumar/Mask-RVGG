@@ -59,12 +59,8 @@ class Loss(object):
             conf_loss = self._focal_conf_sigmoid_loss()
 
         mask_loss, mask_iou_loss = self._loss_mask() 
-        mask_iou_loss *= self._loss_weight_mask_iou
-
-        total_loss = loc_loss + conf_loss + mask_loss + mask_iou_loss
         
-        return loc_loss, conf_loss, mask_loss, mask_iou_loss, \
-                total_loss
+        return loc_loss, conf_loss, mask_loss, mask_iou_loss
 
     def _loss_location(self):
         # only compute losses from positive samples
@@ -75,7 +71,7 @@ class Loss(object):
 
         # calculate the smoothL1(positive_pred, positive_gt) and return
         num_pos = tf.shape(gt_offset)[0]
-        smoothl1loss = tf.keras.losses.Huber(delta=1.)
+        smoothl1loss = tf.keras.losses.Huber(delta=1., reduction=tf.keras.losses.Reduction.NONE)
         if tf.reduce_sum(tf.cast(num_pos, tf.float32)) > 0.0:
             loss_loc = smoothl1loss(gt_offset, pred_offset)
         else:
@@ -83,7 +79,7 @@ class Loss(object):
 
         tf.debugging.assert_all_finite(loss_loc, "Loss Location NaN/Inf")
 
-        return loss_loc*self._loss_weight_box
+        return [tf.reduce_mean(loss_loc)]
 
     def _focal_conf_sigmoid_loss(self, focal_loss_alpha=0.75, focal_loss_gamma=2):
         """
@@ -96,12 +92,10 @@ class Loss(object):
         pred_cls = tf.gather_nd(self.pred_cls, indices)
 
         fl = tfa.losses.SigmoidFocalCrossEntropy(from_logits=True, 
-            reduction=tf.keras.losses.Reduction.SUM)
+            reduction=tf.keras.losses.Reduction.NONE)
         loss = fl(y_true=labels, y_pred=pred_cls)
-
-        pos_indices = tf.where(self.conf_gt > 0 )
-        num_pos = tf.shape(pos_indices)[0]
-        return tf.math.divide_no_nan(loss, tf.cast(num_pos, tf.float32))
+        
+        return [tf.reduce_mean(loss)]
 
     def _loss_class(self):
         scce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
@@ -109,10 +103,8 @@ class Loss(object):
 
         loss_conf = scce(tf.cast(self.conf_gt, dtype=tf.int32), self.pred_cls, 
                             self._loss_weight_cls)
-
-        pos_indices = tf.where(self.conf_gt > 0 )
-        num_pos = tf.shape(pos_indices)[0]
-        return tf.math.divide_no_nan(loss_conf, tf.cast(num_pos, tf.float32))
+    
+        return [tf.reduce_mean(loss_conf)]
 
     def _loss_class_ohem(self):
         # num_cls includes background
@@ -163,11 +155,11 @@ class Loss(object):
 
         if tf.reduce_sum(tf.cast(num_pos, tf.float32)+tf.cast(num_neg, tf.float32)) > 0.0:
             cce = tf.keras.losses.CategoricalCrossentropy(from_logits=True,
-                reduction=tf.keras.losses.Reduction.SUM)
-            loss_conf = cce(target_labels, target_logits) / tf.reduce_sum(tf.cast(num_pos, tf.float32)+tf.cast(num_neg, tf.float32))
+                reduction=tf.keras.losses.Reduction.NONE)
+            loss_conf = tf.reduce_sum(cce(target_labels, target_logits)) / tf.reduce_sum(tf.cast(num_pos, tf.float32)+tf.cast(num_neg, tf.float32))
         else:
             loss_conf = 0.0
-        return loss_conf*self._loss_weight_cls
+        return [loss_conf]
 
     def _loss_mask(self, use_cropped_mask=True):
         loss_s = 0.0
@@ -197,7 +189,7 @@ class Loss(object):
             loss_s += loss
 
         loss_s /= tf.cast(self.config.BATCH_SIZE, dtype=tf.float32)
-        return loss_s*self._loss_weight_mask, 0.0
+        return [loss_s], [0.0]
 
         '''
         # Mask IOU loss
