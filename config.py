@@ -84,7 +84,7 @@ class Config(object):
     }
 
     # Allowed are : ['OHEM', 'FOCAL', 'CROSSENTROPY']
-    LOSS_CLASSIFICATION = 'FOCAL'
+    LOSS_CLASSIFICATION = 'CROSSENTROPY'
 
     NEG_POS_RATIO = 3
     MAX_MASKS_FOR_TRAIN = 100

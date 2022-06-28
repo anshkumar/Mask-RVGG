@@ -317,7 +317,6 @@ def main(argv):
                 loc_loss, conf_loss, mask_loss, mask_iou_loss, \
                     = criterion(model, output, labels, config.NUM_CLASSES+1, image)
 
-
                 loc_loss = tf.nn.compute_average_loss(loc_loss, global_batch_size=global_batch_size)
                 conf_loss = tf.nn.compute_average_loss(conf_loss, global_batch_size=global_batch_size)
                 mask_loss = tf.nn.compute_average_loss(mask_loss, global_batch_size=global_batch_size)
