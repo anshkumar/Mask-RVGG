@@ -46,15 +46,16 @@ class BoxNet(models.Model):
         #             for i in range(depth)]
         self.relu = layers.Lambda(lambda x: tf.nn.swish(x))
         self.reshape = layers.Reshape((-1, num_values))
-        self.level = 0
 
     def call(self, inputs, **kwargs):
-        feature, level = inputs
-        for i in range(self.depth):
-            feature = self.convs[i](feature)
-            feature = self.bns[i][self.level](feature)
-            feature = self.relu(feature)
-        outputs = self.head(feature)
-        outputs = self.reshape(outputs)
-        self.level += 1
+        features = inputs
+        outputs = []
+        for level, feature in enumerate(features):
+            for i in range(self.depth):
+                feature = self.convs[i](feature)
+                feature = self.bns[i][level](feature)
+                feature = self.relu(feature)
+            output = self.head(feature)
+            output = self.reshape(output)
+            outputs.append(output)
         return outputs

@@ -390,7 +390,7 @@ def main(argv):
             save_path = manager.save()
 
             logging.info("Saved checkpoint for step {}: {}".format(
-              int(checkpoint.step), save_path))
+              int(iterations), save_path))
 
             # validation
             valid_iter = 0
@@ -430,8 +430,8 @@ def main(argv):
                             (startY, startX, endY, endX) = box.astype("int")
                             boxW = endX - startX
                             boxH = endY - startY
-                            mask = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
-                            gt_masked_image[_b][startY:endY, startX:endX] = mask
+                            _m = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
+                            gt_masked_image[_b][startY:endY, startX:endX] = _m
 
                         coco_evaluator.add_single_ground_truth_image_info(
                             image_id='image'+str(valid_iter),
@@ -445,7 +445,7 @@ def main(argv):
 
                         det_boxes = output['detection_boxes'][b][:det_num]
                         det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
-                        det_masks = output['detection_masks'][b][:det_num]
+                        det_masks = output['detection_masks'][b][:det_num].numpy()
                         det_masks = (det_masks > 0.5).astype("uint8")
 
                         det_scores = output['detection_scores'][b][:det_num].numpy()
@@ -460,8 +460,8 @@ def main(argv):
                             (startY, startX, endY, endX) = box.astype("int")
                             boxW = endX - startX
                             boxH = endY - startY
-                            mask = cv2.resize(_m, (boxW, boxH))
-                            det_masked_image[_b][startY:endY, startX:endX] = mask
+                            _m = cv2.resize(_m, (boxW, boxH))
+                            det_masked_image[_b][startY:endY, startX:endX] = _m
                         
                         coco_evaluator.add_single_detected_image_info(
                             image_id='image'+str(valid_iter),

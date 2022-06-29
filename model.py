@@ -108,14 +108,9 @@ class MaskED(tf.keras.Model):
 
         features = self.backbone(inputs)        
 
-        classification = [self.class_net([feature, i]) for i, feature in enumerate(features)]
+        classification = self.class_net(features)
         classification = layers.Concatenate(axis=1, name='classification')(classification)
-        regression = [self.box_net([feature, i]) for i, feature in enumerate(features)]
-
-        # Reset the level index.
-        # TODO: change it to proper way
-        self.class_net.level = 0
-        self.box_net.level = 0
+        regression = self.box_net(features)
 
         boxes_feature_level = [tf.tile([[i+1]],[tf.shape(regression[i])[0], tf.shape(regression[i])[1]]) for i, feature in enumerate(features)]
         boxes_feature_level = layers.Concatenate(axis=1, name='boxes_feature_level')(boxes_feature_level)
