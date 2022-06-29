@@ -162,34 +162,31 @@ class Loss(object):
         return [loss_conf]
 
     def _loss_mask(self, use_cropped_mask=True):
-        loss_s = 0.0
-        for i in range(self.config.BATCH_SIZE):
-            p_mask = self.pred_mask[i]
-            cur_class_gt = self.classes[i]
-            masks = self.masks[i]
+        
+        p_mask = tf.reshape(self.pred_mask, (-1, tf.shape(self.pred_mask)[2], tf.shape(self.pred_mask)[3], tf.shape(self.pred_mask)[4]))
+        gt_mask = tf.reshape(self.masks, (-1, tf.shape(self.masks)[2], tf.shape(self.masks)[3]))
+        classes = tf.reshape(self.classes, [-1])
+        class_gt_id = tf.where(classes > 0)
 
-            p_mask = tf.image.resize(p_mask, [self.config.MASK_SHAPE[0], self.config.MASK_SHAPE[1]], 
-                method=tf.image.ResizeMethod.BILINEAR)
+        pos_p_masks = tf.gather_nd(p_mask, class_gt_id)
+        pos_gt_masks = tf.gather_nd(gt_mask, class_gt_id)
 
-            segment_gt = tf.zeros((self.config.MAX_OUTPUT_SIZE, self.config.MASK_SHAPE[0], self.config.MASK_SHAPE[1], self.num_classes)) 
-            segment_gt = tf.transpose(segment_gt, perm=(3, 0, 1, 2))
+        # Gathering positive mask from ground truth
+        pos_classes = tf.gather_nd(classes, class_gt_id)
+        pos_p_masks = tf.transpose(pos_p_masks, (3,0,1,2))
+        _idx = tf.stack((pos_classes, tf.range(tf.shape(pos_classes)[0], dtype=tf.int64)),axis=1)
+        pos_p_masks = tf.gather_nd(pos_p_masks, _idx)
 
-            obj_cls = tf.expand_dims(cur_class_gt, axis=-1)
-            segment_gt = tf.tensor_scatter_nd_update(
-                segment_gt, 
-                indices=obj_cls, 
-                updates=tf.tile(tf.expand_dims(masks,axis=0), [tf.shape(obj_cls)[0],1,1,1]))
-            
-            # Excluding background from the ground truth
-            segment_gt = tf.transpose(segment_gt[1:], perm=(1, 2, 3, 0))
-            cce = tf.keras.losses.BinaryCrossentropy(from_logits=False,
-                reduction=tf.keras.losses.Reduction.NONE)
-            loss = cce(segment_gt, p_mask)
-            loss = tf.reduce_mean(loss)
-            loss_s += loss
+        #Resizing to the input size
+        pos_p_masks = tf.expand_dims(pos_p_masks, axis=-1)
+        pos_p_masks = tf.image.resize(pos_p_masks, [self.config.MASK_SHAPE[0], self.config.MASK_SHAPE[1]], method=tf.image.ResizeMethod.BILINEAR)
+        pos_p_masks = pos_p_masks[:, :, :, 0]
 
-        loss_s /= tf.cast(self.config.BATCH_SIZE, dtype=tf.float32)
-        return [loss_s], [0.0]
+        cce = tf.keras.losses.BinaryCrossentropy(from_logits=True,
+            reduction=tf.keras.losses.Reduction.NONE)
+        loss = cce(pos_gt_masks, pos_p_masks)
+
+        return [tf.reduce_mean(loss)], [0.0]
 
         '''
         # Mask IOU loss

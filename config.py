@@ -50,13 +50,13 @@ class Config(object):
     # Number of classification classes (excluding background)
     NUM_CLASSES = 90  # Override in sub-classes
 
-    MAX_OUTPUT_SIZE = 300
+    MAX_OUTPUT_SIZE = 100
     PER_CLASS_MAX_OUTPUT_SIZE = 100
     CONF_THRESH = 0.05
     NMS_THRESH = 0.5
 
     # Maximum number of ground truth instances to use in one image
-    NUM_MAX_FIX_PADDING = 300 
+    NUM_MAX_FIX_PADDING = 100 
 
     # Size of the top-down layers used to build the feature pyramid
     TOP_DOWN_PYRAMID_SIZE = 256
