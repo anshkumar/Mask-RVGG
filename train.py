@@ -420,14 +420,25 @@ def main(argv):
                         gt_boxes = valid_labels['boxes_norm'][b][:gt_num_box]
                         gt_boxes = gt_boxes.numpy()*np.array([_h,_w,_h,_w])
                         gt_classes = valid_labels['classes'][b][:gt_num_box].numpy()
-                        gt_masks = valid_labels['mask_target'][b][:gt_num_box].numpy().astype("uint8")
+                        gt_masks = valid_labels['mask_target'][b][:gt_num_box].numpy()
+
+                        gt_masked_image = np.zeros((gt_num_box, _h, _w), dtype=np.uint8)
+                        for _b in range(gt_num_box):
+                            box = gt_boxes[_b]
+                            _c = gt_classes[_b] - 1
+                            box = np.round(box).astype(int)
+                            (startY, startX, endY, endX) = box.astype("int")
+                            boxW = endX - startX
+                            boxH = endY - startY
+                            mask = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
+                            gt_masked_image[_b][startY:endY, startX:endX] = mask
 
                         coco_evaluator.add_single_ground_truth_image_info(
                             image_id='image'+str(valid_iter),
                             groundtruth_dict={
                               standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
                               standard_fields.InputDataFields.groundtruth_classes: gt_classes,
-                              standard_fields.InputDataFields.groundtruth_instance_masks: gt_masks
+                              standard_fields.InputDataFields.groundtruth_instance_masks: gt_masked_image
                             })
 
                         det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.05)
@@ -435,18 +446,22 @@ def main(argv):
                         det_boxes = output['detection_boxes'][b][:det_num]
                         det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
                         det_masks = output['detection_masks'][b][:det_num]
-                        det_masks =  tf.image.resize(det_masks, [config.MASK_SHAPE[0], config.MASK_SHAPE[1]], 
-                                method=tf.image.ResizeMethod.BILINEAR).numpy()
                         det_masks = (det_masks > 0.5).astype("uint8")
 
                         det_scores = output['detection_scores'][b][:det_num].numpy()
                         det_classes = output['detection_classes'][b][:det_num].numpy()
 
-                        det_masked_image = np.zeros((det_num, det_masks.shape[1], det_masks.shape[2]))
+                        det_masked_image = np.zeros((det_num, _h, _w), dtype=np.uint8)
                         for _b in range(det_num):
+                            box = det_boxes[_b]
                             _c = det_classes[_b] - 1
                             _m = det_masks[_b][:, :, _c]
-                            det_masked_image[_b] = _m
+                            box = np.round(box).astype(int)
+                            (startY, startX, endY, endX) = box.astype("int")
+                            boxW = endX - startX
+                            boxH = endY - startY
+                            mask = cv2.resize(_m, (boxW, boxH))
+                            det_masked_image[_b][startY:endY, startX:endX] = mask
                         
                         coco_evaluator.add_single_detected_image_info(
                             image_id='image'+str(valid_iter),
@@ -456,8 +471,7 @@ def main(argv):
                                 standard_fields.DetectionResultFields.detection_classes: det_classes,
                                 standard_fields.DetectionResultFields.detection_masks: det_masked_image
                             })
-                from IPython import embed
-                embed()
+
                 v_loc.update_state(valid_loc_loss)
                 v_conf.update_state(valid_conf_loss)
                 v_mask.update_state(valid_mask_loss)
