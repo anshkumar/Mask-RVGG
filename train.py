@@ -434,7 +434,7 @@ def main(argv):
                             gt_masked_image[_b][startY:endY, startX:endX] = _m
 
                         coco_evaluator.add_single_ground_truth_image_info(
-                            image_id='image'+str(valid_iter),
+                            image_id='image'+str(valid_iter)+str(b),
                             groundtruth_dict={
                               standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
                               standard_fields.InputDataFields.groundtruth_classes: gt_classes,
@@ -464,7 +464,7 @@ def main(argv):
                             det_masked_image[_b][startY:endY, startX:endX] = _m
                         
                         coco_evaluator.add_single_detected_image_info(
-                            image_id='image'+str(valid_iter),
+                            image_id='image'+str(valid_iter)+str(b),
                             detections_dict={
                                 standard_fields.DetectionResultFields.detection_boxes: det_boxes,
                                 standard_fields.DetectionResultFields.detection_scores: det_scores,
