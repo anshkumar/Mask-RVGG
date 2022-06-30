@@ -17,9 +17,8 @@ class Detect(object):
         if nms_thresh <= 0:
             raise ValueError('nms_threshold must be non negative.')
         self.conf_thresh = conf_thresh
-        self.use_fast_nms = False
-        self.max_output_size = 300
-        self.per_class_max_output_size = 100
+        self.max_output_size = max_output_size
+        self.per_class_max_output_size = per_class_max_output_size
 
     def __call__(self, net_outs, img_shape, trad_nms=False, use_cropped_mask=True):
         """
@@ -76,7 +75,7 @@ class Detect(object):
 
             if tf.size(class_thre) > 0:
                 if not trad_nms:
-                    boxes, class_ids, class_thre, boxes_fl_thre = utils._cc_fast_nms(boxes, class_thre, boxes_fl_thre)
+                    boxes, class_ids, class_thre, boxes_fl_thre = utils._cc_fast_nms(boxes, class_thre, boxes_fl_thre, iou_threshold=self.nms_thresh, top_k=self.max_output_size)
                 else:
                     boxes, class_ids, class_thre, boxes_fl_thre = utils._traditional_nms(boxes, class_thre, boxes_fl_thre, score_threshold=self.conf_thresh, iou_threshold=self.nms_thresh)
 
