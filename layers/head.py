@@ -36,7 +36,7 @@ class FastMaskIoUNet(tf.keras.layers.Layer):
 
 class PredictionModule(tf.keras.layers.Layer):
 
-    def __init__(self, out_channels, num_anchors, num_class, num_mask):
+    def __init__(self, out_channels, num_anchors, num_class):
         super(PredictionModule, self).__init__()
         self.num_anchors = num_anchors
         self.num_class = num_class
