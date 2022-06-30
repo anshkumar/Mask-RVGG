@@ -6,6 +6,7 @@ In development <br/>
 * Tensorflow (>=2.9.0), Tensorflow Addons
 * cocoapi
 * OpenCV
+* tqdm
 
 For detailed steps to install Tensorflow, follow the [Tensorflow installation instructions](https://www.tensorflow.org/install/). A typical user can install Tensorflow using one of the following commands:
 
