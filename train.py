@@ -23,6 +23,7 @@ import numpy as np
 import cv2
 from google.protobuf import text_format
 from protos import string_int_label_map_pb2
+import time
 
 tf.random.set_seed(123)
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -416,6 +417,7 @@ def main(argv):
                     _w = valid_image.shape[2]
                     
                     for b in range(config.BATCH_SIZE):
+                        image_id = int(time.time()*1000000)
                         gt_num_box = valid_labels['num_obj'][b].numpy()
                         gt_boxes = valid_labels['boxes_norm'][b][:gt_num_box]
                         gt_boxes = gt_boxes.numpy()*np.array([_h,_w,_h,_w])
@@ -434,7 +436,7 @@ def main(argv):
                               gt_masked_image[_b][startY:endY, startX:endX] = _m
 
                         coco_evaluator.add_single_ground_truth_image_info(
-                            image_id='image'+str(valid_iter)+str(b),
+                            image_id='image'+str(image_id),
                             groundtruth_dict={
                               standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
                               standard_fields.InputDataFields.groundtruth_classes: gt_classes,
@@ -465,7 +467,7 @@ def main(argv):
                               det_masked_image[_b][startY:endY, startX:endX] = _m
                         
                         coco_evaluator.add_single_detected_image_info(
-                            image_id='image'+str(valid_iter)+str(b),
+                            image_id='image'+str(image_id),
                             detections_dict={
                                 standard_fields.DetectionResultFields.detection_boxes: det_boxes,
                                 standard_fields.DetectionResultFields.detection_scores: det_scores,
