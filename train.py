@@ -460,8 +460,9 @@ def main(argv):
                             (startY, startX, endY, endX) = box.astype("int")
                             boxW = endX - startX
                             boxH = endY - startY
-                            _m = cv2.resize(_m, (boxW, boxH))
-                            det_masked_image[_b][startY:endY, startX:endX] = _m
+                            if boxW > 0 and boxH > 0:
+                              _m = cv2.resize(_m, (boxW, boxH))
+                              det_masked_image[_b][startY:endY, startX:endX] = _m
                         
                         coco_evaluator.add_single_detected_image_info(
                             image_id='image'+str(valid_iter)+str(b),
