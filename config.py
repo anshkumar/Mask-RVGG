@@ -30,22 +30,26 @@ class Config(object):
     # Length of square anchor side in pixels
     ANCHOR_SCALES = [[24.0, 30.238105197476955, 38.097625247236785], [48.0, 60.47621039495391, 76.19525049447357], [96.0, 120.95242078990782, 152.39050098894714], [192.0, 241.90484157981564, 304.7810019778943], [384.0, 483.8096831596313, 609.5620039557886]]
 
-    # [64, 88, 112, 160, 224, 288, 384]
-    W_BIFPN = 64
 
-    # [3, 4, 5, 6, 7, 7, 8]
-    D_BIFPN = 3
+    FPN_FEATURE_MAP_SIZE = 256
+    ###########################################################################
+    # # [64, 88, 112, 160, 224, 288, 384]
+    # W_BIFPN = 64
 
-    # [3, 3, 3, 4, 4, 4, 5]
-    D_HEAD = 3
+    # # [3, 4, 5, 6, 7, 7, 8]
+    # D_BIFPN = 3
 
-    WEIGHTED_BIFPN = False
+    # # [3, 3, 3, 4, 4, 4, 5]
+    # D_HEAD = 3
 
-    FPN_FREEZE_BN = False
+    # WEIGHTED_BIFPN = False
 
-    SEPARABLE_CONV = True
+    # FPN_FREEZE_BN = False
 
-    DETECT_QUADRANGLE = False
+    # SEPARABLE_CONV = True
+
+    # DETECT_QUADRANGLE = False
+    ###########################################################################
 
     # Number of classification classes (excluding background)
     NUM_CLASSES = 90  # Override in sub-classes
