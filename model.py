@@ -104,7 +104,7 @@ class MaskED(tf.keras.Model):
         boxes_feature_level = []
 
         # all output from FPN use same prediction head
-        for i, feature in features:
+        for i, feature in enumerate(features):
             cls, offset = self.predictionHead(feature)
             pred_cls.append(cls)
             pred_offset.append(offset)
