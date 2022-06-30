@@ -40,7 +40,6 @@ class PredictionModule(tf.keras.layers.Layer):
         super(PredictionModule, self).__init__()
         self.num_anchors = num_anchors
         self.num_class = num_class
-        self.num_mask = num_mask
 
         self.Conv = tf.keras.layers.Conv2D(out_channels, (3, 3), 1, padding="same",
                                            kernel_initializer=  tf.keras.initializers.RandomNormal(stddev=0.01),
