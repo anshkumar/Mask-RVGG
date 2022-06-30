@@ -24,6 +24,7 @@ import cv2
 from google.protobuf import text_format
 from protos import string_int_label_map_pb2
 import time
+from tqdm import tqdm
 
 tf.random.set_seed(123)
 physical_devices = tf.config.list_physical_devices('GPU')
@@ -395,7 +396,7 @@ def main(argv):
 
             # validation
             valid_iter = 0
-            for valid_image, valid_labels in valid_dataset:
+            for valid_image, valid_labels in tqdm(valid_dataset):
                 if valid_iter > FLAGS.valid_iter:
                     break
                 # calculate validation loss
