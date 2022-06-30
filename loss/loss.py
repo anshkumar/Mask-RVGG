@@ -12,7 +12,6 @@ class Loss(object):
         self._loss_weight_mask = config.LOSS_WEIGHTS['loss_weight_mask']
         self._loss_weight_mask_iou = config.LOSS_WEIGHTS['loss_weight_mask_iou']
         self._neg_pos_ratio = config.NEG_POS_RATIO
-        self._max_masks_for_train = config.MAX_MASKS_FOR_TRAIN
         self.use_mask_iou = config.USE_MASK_IOU
         self.config = config
 

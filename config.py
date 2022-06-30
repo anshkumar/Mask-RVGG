@@ -18,7 +18,7 @@ class Config(object):
     BASE_MODEL_TRAINABLE = True
     FREEZE_BACKBONE_BN = True
 
-    BATCH_SIZE = 8 # Batch size per GPU
+    BATCH_SIZE = 12 # Batch size per GPU
     # (Height, Width, Channels)
     # [512, 640, 768, 896, 1024, 1280, 1408]
     IMAGE_SHAPE = [512, 512, 3]
@@ -88,10 +88,9 @@ class Config(object):
     }
 
     # Allowed are : ['OHEM', 'FOCAL', 'CROSSENTROPY']
-    LOSS_CLASSIFICATION = 'CROSSENTROPY'
+    LOSS_CLASSIFICATION = 'OHEM'
 
     NEG_POS_RATIO = 3
-    MAX_MASKS_FOR_TRAIN = 100
     USE_MASK_IOU = False
 
     # Learning rate and momentum
@@ -99,14 +98,14 @@ class Config(object):
     # weights to explode. Likely due to differences in optimizer
     # implementation.
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW']
-    OPTIMIZER = 'Adam'
-    LEARNING_RATE = 1e-3
+    OPTIMIZER = 'SGD'
+    LEARNING_RATE = 4e-2
     N_WARMUP_STEPS = 500
-    WARMUP_LR = 1e-4
+    WARMUP_LR = 4e-3
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
-    TRAIN_ITER = 800000
-    LR_TOTAL_STEPS = 800000
+    TRAIN_ITER = 300000
+    LR_TOTAL_STEPS = 300000
 
     # Weight decay regularization
     WEIGHT_DECAY = 5*1e-4
