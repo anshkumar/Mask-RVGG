@@ -425,7 +425,6 @@ def main(argv):
                         gt_masked_image = np.zeros((gt_num_box, _h, _w), dtype=np.uint8)
                         for _b in range(gt_num_box):
                             box = gt_boxes[_b]
-                            _c = gt_classes[_b] - 1
                             box = np.round(box).astype(int)
                             (startY, startX, endY, endX) = box.astype("int")
                             boxW = endX - startX
@@ -449,7 +448,7 @@ def main(argv):
                         det_masks = (det_masks > 0.5).astype("uint8")
 
                         det_scores = output['detection_scores'][b][:det_num].numpy()
-                        det_classes = output['detection_classes'][b][:det_num].numpy()
+                        det_classes = output['detection_classes'][b][:det_num].numpy().astype(int)
 
                         det_masked_image = np.zeros((det_num, _h, _w), dtype=np.uint8)
                         for _b in range(det_num):
