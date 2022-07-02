@@ -20,7 +20,7 @@ class Detect(object):
         self.max_output_size = max_output_size
         self.per_class_max_output_size = per_class_max_output_size
 
-    def __call__(self, net_outs, img_shape, trad_nms=False, use_cropped_mask=True):
+    def __call__(self, net_outs, img_shape, trad_nms=True, use_cropped_mask=True):
         """
         Args:
              pred_offset: (tensor) Loc preds from loc layers
@@ -77,7 +77,7 @@ class Detect(object):
                 if not trad_nms:
                     boxes, class_ids, class_thre, boxes_fl_thre = utils._cc_fast_nms(boxes, class_thre, boxes_fl_thre, iou_threshold=self.nms_thresh, top_k=self.max_output_size)
                 else:
-                    boxes, class_ids, class_thre, boxes_fl_thre = utils._traditional_nms(boxes, class_thre, boxes_fl_thre, score_threshold=self.conf_thresh, iou_threshold=self.nms_thresh)
+                    boxes, class_ids, class_thre, boxes_fl_thre = utils._traditional_nms(boxes, class_thre, boxes_fl_thre, score_threshold=self.conf_thresh, iou_threshold=self.nms_thresh, max_class_output_size=self.per_class_max_output_size, max_output_size=self.max_output_size)
 
                 num_detection = [tf.shape(boxes)[0]]
                 boxes = self._sanitize(boxes, width=1, height=1)

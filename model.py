@@ -42,10 +42,10 @@ class MaskED(tf.keras.Model):
         base_model.trainable = config.BASE_MODEL_TRAINABLE 
 
         # Freeze BatchNormalization in pre-trained backbone
-        if config.FREEZE_BACKBONE_BN:
-            for layer in base_model.layers:
-                if isinstance(layer, tf.keras.layers.BatchNormalization):
-                  layer.trainable = False
+        #if config.FREEZE_BACKBONE_BN:
+        #    for layer in base_model.layers:
+        #        if isinstance(layer, tf.keras.layers.BatchNormalization):
+        #          layer.trainable = False
 
         outputs=[base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
         self.backbone_fpn = FeaturePyramidNeck(config.FPN_FEATURE_MAP_SIZE)
@@ -95,7 +95,7 @@ class MaskED(tf.keras.Model):
     def call(self, inputs, training=False):
         inputs = tf.cast(inputs, tf.float32)
 
-        c3, c4, c5 = self.backbone(inputs)  
+        c3, c4, c5 = self.backbone(inputs, training=False)  
         features = self.backbone_fpn(c3, c4, c5)    
 
         # Prediction Head branch

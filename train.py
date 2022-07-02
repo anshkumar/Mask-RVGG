@@ -162,7 +162,7 @@ def main(argv):
                         add_decay_loss(layer, factor)
                 else:
                     for param in m.trainable_weights:
-                      if 'gamma' not in param.name and 'beta' not in param.name:
+                      #if 'gamma' not in param.name and 'beta' not in param.name:
                         with tf.keras.backend.name_scope('weight_regularizer'):
                             regularizer = lambda: tf.keras.regularizers.l2(factor)(param)
                             m.add_loss(regularizer)

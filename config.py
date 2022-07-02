@@ -18,7 +18,7 @@ class Config(object):
     BASE_MODEL_TRAINABLE = True
     FREEZE_BACKBONE_BN = True
 
-    BATCH_SIZE = 12 # Batch size per GPU
+    BATCH_SIZE = 32 # Batch size per GPU
     # (Height, Width, Channels)
     # [512, 640, 768, 896, 1024, 1280, 1408]
     IMAGE_SHAPE = [512, 512, 3]
@@ -104,8 +104,8 @@ class Config(object):
     WARMUP_LR = 4e-3
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
-    TRAIN_ITER = 300000
-    LR_TOTAL_STEPS = 300000
+    TRAIN_ITER = 200000
+    LR_TOTAL_STEPS = 200000
 
     # Weight decay regularization
     WEIGHT_DECAY = 5*1e-4

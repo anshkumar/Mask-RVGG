@@ -267,7 +267,40 @@ def _encode(map_loc, anchors, include_variances=True):
     
     return offsets
 
-def _traditional_nms(boxes, scores, boxes_f_level, iou_threshold=0.5, score_threshold=0.05, max_output_size=300):
+def _traditional_nms(boxes, scores, boxes_f_level, iou_threshold=0.5, score_threshold=0.05, max_class_output_size=100, max_output_size=300):
+    num_classes = tf.shape(scores)[1]
+
+    _boxes = tf.zeros((max_class_output_size*num_classes, 4), tf.float32)
+    _classes = tf.zeros((max_class_output_size*num_classes), tf.float32)
+    _scores = tf.zeros((max_class_output_size*num_classes), tf.float32)
+    _boxes_f_level = tf.zeros((max_class_output_size*num_classes), tf.int32)
+
+    for _cls in range(num_classes):
+        cls_scores = scores[:, _cls]
+        selected_indices = tf.image.non_max_suppression(
+            boxes, 
+            cls_scores, 
+            max_output_size=max_class_output_size,
+            iou_threshold=iou_threshold, 
+            score_threshold=score_threshold)
+
+        _update_boxes = tf.gather(boxes, selected_indices)
+        _num_boxes = tf.shape(_update_boxes)[0]
+        _ind_boxes = tf.range(_cls*max_class_output_size, _cls*max_class_output_size+_num_boxes)
+
+        _boxes = tf.tensor_scatter_nd_update(_boxes, tf.expand_dims(_ind_boxes, axis=-1), _update_boxes)
+        _classes = tf.tensor_scatter_nd_update(_classes, tf.expand_dims(_ind_boxes, axis=-1), tf.gather(cls_scores, selected_indices) * 0.0 + tf.cast(_cls, dtype=tf.float32) + 1.0)
+        _scores = tf.tensor_scatter_nd_update(_scores, tf.expand_dims(_ind_boxes, axis=-1), tf.gather(cls_scores, selected_indices))
+        _boxes_f_level = tf.tensor_scatter_nd_update(_boxes_f_level, tf.expand_dims(_ind_boxes, axis=-1), tf.gather(boxes_f_level, selected_indices))
+
+    _ids = tf.argsort(_scores, direction='DESCENDING')
+    scores = tf.gather(_scores, _ids)[:max_output_size]
+    boxes = tf.gather(_boxes, _ids)[:max_output_size]
+    classes = tf.gather(_classes, _ids)[:max_output_size]
+    boxes_f_level = tf.gather(_boxes_f_level, _ids)[:max_output_size]
+    return boxes, classes, scores, boxes_f_level
+
+def _traditional_nms_v2(boxes, scores, boxes_f_level, iou_threshold=0.5, score_threshold=0.05, max_output_size=300):
     selected_indices = tf.image.non_max_suppression(boxes, 
         tf.reduce_max(scores, axis=-1), 
         max_output_size=max_output_size, 
