@@ -60,7 +60,6 @@ class Detect(object):
         detection_boxes = tf.zeros((batch_size, self.max_output_size, 4), tf.float32)
         detection_classes = tf.zeros((batch_size, self.max_output_size), tf.float32)
         detection_scores = tf.zeros((batch_size, self.max_output_size), tf.float32)
-        detection_boxes_feature_level = tf.zeros((batch_size, self.max_output_size), tf.int32)
         num_detections = tf.zeros((batch_size), tf.int32)
 
         for b in range(batch_size):
@@ -75,9 +74,9 @@ class Detect(object):
 
             if tf.size(class_thre) > 0:
                 if not trad_nms:
-                    boxes, class_ids, class_thre, boxes_fl_thre = utils._cc_fast_nms(boxes, class_thre, boxes_fl_thre, iou_threshold=self.nms_thresh, top_k=self.max_output_size)
+                    boxes, class_ids, class_thre = utils._cc_fast_nms(boxes, class_thre, iou_threshold=self.nms_thresh, top_k=self.max_output_size)
                 else:
-                    boxes, class_ids, class_thre, boxes_fl_thre = utils._traditional_nms(boxes, class_thre, boxes_fl_thre, score_threshold=self.conf_thresh, iou_threshold=self.nms_thresh, max_class_output_size=self.per_class_max_output_size, max_output_size=self.max_output_size)
+                    boxes, class_ids, class_thre = utils._traditional_nms(boxes, class_thre, score_threshold=self.conf_thresh, iou_threshold=self.nms_thresh, max_class_output_size=self.per_class_max_output_size, max_output_size=self.max_output_size)
 
                 num_detection = [tf.shape(boxes)[0]]
                 boxes = self._sanitize(boxes, width=1, height=1)
@@ -86,10 +85,9 @@ class Detect(object):
                 detection_boxes = tf.tensor_scatter_nd_update(detection_boxes, _ind_boxes, boxes)
                 detection_classes = tf.tensor_scatter_nd_update(detection_classes, _ind_boxes, class_ids)
                 detection_scores = tf.tensor_scatter_nd_update(detection_scores, _ind_boxes, class_thre)
-                detection_boxes_feature_level = tf.tensor_scatter_nd_update(detection_boxes_feature_level, _ind_boxes, boxes_fl_thre)
                 num_detections = tf.tensor_scatter_nd_update(num_detections, [[b]], num_detection)
 
-        result = {'detection_boxes': detection_boxes,'detection_classes': detection_classes, 'detection_scores': detection_scores, 'detection_boxes_feature_level': detection_boxes_feature_level, 'num_detections': num_detections}
+        result = {'detection_boxes': detection_boxes,'detection_classes': detection_classes, 'detection_scores': detection_scores, 'num_detections': num_detections}
         return result
 
     def _sanitize(self, boxes, width, height,  padding: int = 0):

@@ -52,21 +52,38 @@ class PyramidROIAlign(keras.layers.Layer):
         config['pool_shape'] = self.pool_shape
         return config
 
-    def call(self, boxes, feature_maps, box_fpn_level, config):
+    def call(self, boxes, feature_maps, config):
         # boxes: Crop boxes [batch, num_boxes, (y1, x1, y2, x2)] in normalized coords
         # feature_maps: List of feature maps from different level of the
         #               feature pyramid. Each is [batch, height, width, channels]
 
-        # Loop through levels and apply ROI pooling to each.
-        pooled = []
-        box_batch_indices = []
 
-        for level in range(len(feature_maps)):
-            ix = tf.where(tf.equal(box_fpn_level, level+1))
+        # Assign each ROI to a level in the pyramid based on the ROI area.
+        y1, x1, y2, x2 = tf.split(boxes, 4, axis=2)
+        h = y2 - y1
+        w = x2 - x1
+
+        # Equation 1 in the Feature Pyramid Networks paper. Account for
+        # the fact that our coordinates are normalized here.
+        # e.g. a 224x224 ROI (in pixels) maps to P4
+        image_area = tf.cast(config.IMAGE_SHAPE[0] * config.IMAGE_SHAPE[1], tf.float32)
+        roi_level = log2_graph(tf.sqrt(h * w) / (224.0 / tf.sqrt(image_area)))
+        roi_level = tf.minimum(6, tf.maximum(
+            3, 5 + tf.cast(tf.round(roi_level), tf.int32)))
+        roi_level = tf.squeeze(roi_level, 2)
+
+        # Loop through levels and apply ROI pooling to each. P3 to P6.
+        pooled = []
+        box_to_level = []
+        for i, level in enumerate(range(3, 7)):
+            ix = tf.compat.v1.where(tf.equal(roi_level, level))
             level_boxes = tf.gather_nd(boxes, ix)
-            
+
             # Box indices for crop_and_resize.
             box_indices = tf.cast(ix[:, 0], tf.int32)
+
+            # Keep track of which box is mapped to which level
+            box_to_level.append(ix)
 
             # Stop gradient propogation to ROI proposals
             level_boxes = tf.stop_gradient(level_boxes)
@@ -82,28 +99,32 @@ class PyramidROIAlign(keras.layers.Layer):
             # which is how it's done in tf.crop_and_resize()
             # Result: [batch * num_boxes, pool_height, pool_width, channels]
             pooled.append(tf.image.crop_and_resize(
-                feature_maps[level], level_boxes, box_indices, self.pool_shape,
+                feature_maps[i], level_boxes, box_indices, self.pool_shape,
                 method="bilinear"))
-            box_batch_indices.append(box_indices)
-             
+
         # Pack pooled features into one tensor
         pooled = tf.concat(pooled, axis=0)
-        box_batch_indices = tf.concat(box_batch_indices, axis=0)
 
-        _, idx, _ = tf.unique_with_counts(box_batch_indices)
-        pooled_batch = tf.dynamic_partition(pooled, idx, config.BATCH_SIZE)
+        # Pack box_to_level mapping into one array and add another
+        # column representing the order of pooled boxes
+        box_to_level = tf.concat(box_to_level, axis=0)
+        box_range = tf.expand_dims(tf.range(tf.shape(input=box_to_level)[0]), 1)
+        box_to_level = tf.concat([tf.cast(box_to_level, tf.int32), box_range],
+                                 axis=1)
 
-        pooled_masked = []
-        for pool in pooled_batch:
-             num_padding = config.MAX_OUTPUT_SIZE - tf.shape(pool)[0]
-             pad_pool = tf.zeros([num_padding, tf.shape(pool)[1], tf.shape(pool)[2], tf.shape(pool)[3]])
-             pool = tf.concat([pool, pad_pool], axis=0)
-             pooled_masked.append(pool)
+        # Rearrange pooled features to match the order of the original boxes
+        # Sort box_to_level by batch then box index
+        # TF doesn't have a way to sort by two columns, so merge them and sort.
+        sorting_tensor = box_to_level[:, 0] * 100000 + box_to_level[:, 1]
+        ix = tf.nn.top_k(sorting_tensor, k=tf.shape(
+            input=box_to_level)[0]).indices[::-1]
+        ix = tf.gather(box_to_level[:, 2], ix)
+        pooled = tf.gather(pooled, ix)
 
-        pooled_batch = [tf.expand_dims(pool, axis=0) for pool in pooled_masked]
-        pooled_batch = tf.concat(pooled_batch, axis=0)
-
-        return pooled_batch
+        # Re-add the batch dimension
+        shape = tf.concat([tf.shape(input=boxes)[:2], tf.shape(input=pooled)[1:]], axis=0)
+        pooled = tf.reshape(pooled, shape)
+        return pooled
 
     def compute_output_shape(self, input_shape):
         return input_shape[0][:2] + self.pool_shape + (input_shape[2][-1], )
@@ -182,13 +203,13 @@ class MaskHead(keras.layers.Layer):
                            name="mrcnn_mask")
 
     def call(self, rois, feature_maps,
-        num_classes, boxes_feature_level, config):
+        num_classes, config):
         """Builds the computation graph of the mask head of Feature Pyramid Network.
 
         rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
               coordinates.
         feature_maps: List of feature maps from different layers of the pyramid,
-                      [P2, P3, P4, P5]. Each has a different resolution.
+                      [P3, P4, P5, P6]. Each has a different resolution.
         image_shape: Image Dimensions
         num_classes: number of classes, which determines the depth of the results
         train_bn: Boolean. Train or freeze Batch Norm layers
@@ -197,7 +218,7 @@ class MaskHead(keras.layers.Layer):
         """
         # ROI Pooling
         # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
-        x = self.roiAlign(rois, feature_maps, boxes_feature_level, config)
+        x = self.roiAlign(rois, feature_maps, config)
 
         # Conv layers
         x = self.conv_1(x)

@@ -267,7 +267,7 @@ def _encode(map_loc, anchors, include_variances=True):
     
     return offsets
 
-def _traditional_nms(boxes, scores, boxes_f_level, iou_threshold=0.5, score_threshold=0.05, max_class_output_size=100, max_output_size=300):
+def _traditional_nms(boxes, scores, iou_threshold=0.5, score_threshold=0.05, max_class_output_size=100, max_output_size=300):
     num_classes = tf.shape(scores)[1]
 
     _boxes = tf.zeros((max_class_output_size*num_classes, 4), tf.float32)
@@ -297,10 +297,9 @@ def _traditional_nms(boxes, scores, boxes_f_level, iou_threshold=0.5, score_thre
     scores = tf.gather(_scores, _ids)[:max_output_size]
     boxes = tf.gather(_boxes, _ids)[:max_output_size]
     classes = tf.gather(_classes, _ids)[:max_output_size]
-    boxes_f_level = tf.gather(_boxes_f_level, _ids)[:max_output_size]
-    return boxes, classes, scores, boxes_f_level
+    return boxes, classes, scores
 
-def _traditional_nms_v2(boxes, scores, boxes_f_level, iou_threshold=0.5, score_threshold=0.05, max_output_size=300):
+def _traditional_nms_v2(boxes, scores, iou_threshold=0.5, score_threshold=0.05, max_output_size=300):
     selected_indices = tf.image.non_max_suppression(boxes, 
         tf.reduce_max(scores, axis=-1), 
         max_output_size=max_output_size, 
@@ -311,10 +310,9 @@ def _traditional_nms_v2(boxes, scores, boxes_f_level, iou_threshold=0.5, score_t
     boxes = tf.gather(boxes, selected_indices)
     scores = tf.gather(tf.reduce_max(scores, axis=-1), selected_indices)
     classes = tf.cast(tf.gather(classes, selected_indices), dtype=tf.float32)
-    boxes_f_level = tf.gather(tf.reduce_max(boxes_f_level, axis=-1), selected_indices)
-    return boxes, classes, scores, boxes_f_level
+    return boxes, classes, scores
 
-def _cc_fast_nms(boxes, scores, boxes_f_level, iou_threshold:float=0.5, top_k:int=15):
+def _cc_fast_nms(boxes, scores, iou_threshold:float=0.5, top_k:int=15):
     # Cross Class NMS
     # Collapse all the classes into 1 
     classes = tf.argmax(scores, axis=-1)+1
@@ -340,7 +338,6 @@ def _cc_fast_nms(boxes, scores, boxes_f_level, iou_threshold:float=0.5, top_k:in
     classes = tf.cast(tf.gather_nd(classes, tf.expand_dims(idx_out, axis=-1)), dtype=tf.float32)
     boxes = tf.gather_nd(boxes, tf.expand_dims(idx_out, axis=-1))
     scores = tf.gather_nd(scores, tf.expand_dims(idx_out, axis=-1))
-    boxes_f_level = tf.gather_nd(boxes_f_level, tf.expand_dims(idx_out, axis=-1))
 
-    return boxes, classes, scores, boxes_f_level
+    return boxes, classes, scores
 
