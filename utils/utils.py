@@ -273,7 +273,6 @@ def _traditional_nms(boxes, scores, iou_threshold=0.5, score_threshold=0.05, max
     _boxes = tf.zeros((max_class_output_size*num_classes, 4), tf.float32)
     _classes = tf.zeros((max_class_output_size*num_classes), tf.float32)
     _scores = tf.zeros((max_class_output_size*num_classes), tf.float32)
-    _boxes_f_level = tf.zeros((max_class_output_size*num_classes), tf.int32)
 
     for _cls in range(num_classes):
         cls_scores = scores[:, _cls]
@@ -291,7 +290,6 @@ def _traditional_nms(boxes, scores, iou_threshold=0.5, score_threshold=0.05, max
         _boxes = tf.tensor_scatter_nd_update(_boxes, tf.expand_dims(_ind_boxes, axis=-1), _update_boxes)
         _classes = tf.tensor_scatter_nd_update(_classes, tf.expand_dims(_ind_boxes, axis=-1), tf.gather(cls_scores, selected_indices) * 0.0 + tf.cast(_cls, dtype=tf.float32) + 1.0)
         _scores = tf.tensor_scatter_nd_update(_scores, tf.expand_dims(_ind_boxes, axis=-1), tf.gather(cls_scores, selected_indices))
-        _boxes_f_level = tf.tensor_scatter_nd_update(_boxes_f_level, tf.expand_dims(_ind_boxes, axis=-1), tf.gather(boxes_f_level, selected_indices))
 
     _ids = tf.argsort(_scores, direction='DESCENDING')
     scores = tf.gather(_scores, _ids)[:max_output_size]
