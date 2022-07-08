@@ -95,7 +95,7 @@ class MaskED(tf.keras.Model):
     def call(self, inputs, training=False):
         inputs = tf.cast(inputs, tf.float32)
 
-        c3, c4, c5 = self.backbone(inputs, training=False)  
+        c3, c4, c5 = self.backbone(inputs, training=True)  
         features = self.backbone_fpn(c3, c4, c5)    
 
         # Prediction Head branch

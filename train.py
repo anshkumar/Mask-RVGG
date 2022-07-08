@@ -162,7 +162,7 @@ def main(argv):
                         add_decay_loss(layer, factor)
                 else:
                     for param in m.trainable_weights:
-                      #if 'gamma' not in param.name and 'beta' not in param.name:
+                      if 'gamma' not in param.name and 'beta' not in param.name:
                         with tf.keras.backend.name_scope('weight_regularizer'):
                             regularizer = lambda: tf.keras.regularizers.l2(factor)(param)
                             m.add_loss(regularizer)
@@ -183,8 +183,13 @@ def main(argv):
           lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
              [config.N_WARMUP_STEPS, int(0.35*config.TRAIN_ITER), int(0.75*config.TRAIN_ITER), int(0.875*config.TRAIN_ITER), int(0.9375*config.TRAIN_ITER)], 
              [config.WARMUP_LR, config.LEARNING_RATE, 0.1*config.LEARNING_RATE, 0.01*config.LEARNING_RATE, 0.001*config.LEARNING_RATE, 0.0001*config.LEARNING_RATE])
+          lr_schedule = learning_rate_schedule.LearningRateSchedule(
+            warmup_steps=config.N_WARMUP_STEPS, 
+            warmup_lr=config.WARMUP_LR,
+            initial_lr=config.LEARNING_RATE, 
+            total_steps=config.LR_TOTAL_STEPS)
           if config.GRADIENT_CLIP_NORM is not None:
-            optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM, clipnorm=config.GRADIENT_CLIP_NORM)
+            optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM, clipnorm=config.GRADIENT_CLIP_NORM, nesterov=True)
           else:
             optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM)
         elif config.OPTIMIZER == 'Adam':
@@ -319,10 +324,10 @@ def main(argv):
                 loc_loss, conf_loss, mask_loss, mask_iou_loss, \
                     = criterion(model, output, labels, config.NUM_CLASSES+1, image)
 
-                loc_loss = tf.nn.compute_average_loss(loc_loss, global_batch_size=global_batch_size)
-                conf_loss = tf.nn.compute_average_loss(conf_loss, global_batch_size=global_batch_size)
-                mask_loss = tf.nn.compute_average_loss(mask_loss, global_batch_size=global_batch_size)
-                mask_iou_loss = tf.nn.compute_average_loss(mask_iou_loss, global_batch_size=global_batch_size)
+                loc_loss = tf.nn.compute_average_loss(loc_loss, global_batch_size=mirrored_strategy.num_replicas_in_sync)
+                conf_loss = tf.nn.compute_average_loss(conf_loss, global_batch_size=mirrored_strategy.num_replicas_in_sync)
+                mask_loss = tf.nn.compute_average_loss(mask_loss, global_batch_size=mirrored_strategy.num_replicas_in_sync)
+                mask_iou_loss = tf.nn.compute_average_loss(mask_iou_loss, global_batch_size=mirrored_strategy.num_replicas_in_sync)
     
                 total_loss = loc_loss + conf_loss + mask_loss + mask_iou_loss
             grads = tape.gradient(total_loss, model.trainable_variables)

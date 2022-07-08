@@ -18,7 +18,7 @@ class Config(object):
     BASE_MODEL_TRAINABLE = True
     FREEZE_BACKBONE_BN = True
 
-    BATCH_SIZE = 32 # Batch size per GPU
+    BATCH_SIZE = 8 # Batch size per GPU
     # (Height, Width, Channels)
     # [512, 640, 768, 896, 1024, 1280, 1408]
     IMAGE_SHAPE = [512, 512, 3]
@@ -99,13 +99,13 @@ class Config(object):
     # implementation.
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW']
     OPTIMIZER = 'SGD'
-    LEARNING_RATE = 4e-2
+    LEARNING_RATE = 4e-3
     N_WARMUP_STEPS = 500
-    WARMUP_LR = 4e-3
+    WARMUP_LR = 4e-4
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
-    TRAIN_ITER = 200000
-    LR_TOTAL_STEPS = 200000
+    TRAIN_ITER = 800000
+    LR_TOTAL_STEPS = 800000
 
     # Weight decay regularization
     WEIGHT_DECAY = 5*1e-4
