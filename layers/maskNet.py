@@ -66,7 +66,7 @@ class PyramidROIAlign(keras.layers.Layer):
         # Equation 2 of CenterMask(https://arxiv.org/abs/1911.06667)
         roi_level = log2_graph(h*w)
         roi_level = tf.minimum(5, tf.maximum(
-            3, 5 + tf.cast(tf.round(roi_level), tf.int32)))
+            3, tf.math.ceil(5 + roi_level)))
         roi_level = tf.squeeze(roi_level, 2)
 
         # Loop through levels and apply ROI pooling to each. P3 to P6.
