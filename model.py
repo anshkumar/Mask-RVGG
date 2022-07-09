@@ -124,7 +124,7 @@ class MaskED(tf.keras.Model):
         pred.update(self.detect(pred, img_shape=tf.shape(inputs)))
 
         masks = self.mask_head(pred['detection_boxes'],
-                        features[:-1],
+                        features[:-2],
                         self.num_classes,
                         self.config)
         pred.update({'detection_masks': masks})

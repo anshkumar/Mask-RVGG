@@ -63,19 +63,16 @@ class PyramidROIAlign(keras.layers.Layer):
         h = y2 - y1
         w = x2 - x1
 
-        # Equation 1 in the Feature Pyramid Networks paper. Account for
-        # the fact that our coordinates are normalized here.
-        # e.g. a 224x224 ROI (in pixels) maps to P4
-        image_area = tf.cast(config.IMAGE_SHAPE[0] * config.IMAGE_SHAPE[1], tf.float32)
-        roi_level = log2_graph(tf.sqrt(h * w) / (224.0 / tf.sqrt(image_area)))
-        roi_level = tf.minimum(6, tf.maximum(
+        # Equation 2 of CenterMask(https://arxiv.org/abs/1911.06667)
+        roi_level = log2_graph(h*w)
+        roi_level = tf.minimum(5, tf.maximum(
             3, 5 + tf.cast(tf.round(roi_level), tf.int32)))
         roi_level = tf.squeeze(roi_level, 2)
 
         # Loop through levels and apply ROI pooling to each. P3 to P6.
         pooled = []
         box_to_level = []
-        for i, level in enumerate(range(3, 7)):
+        for i, level in enumerate(range(3, 6)):
             ix = tf.compat.v1.where(tf.equal(roi_level, level))
             level_boxes = tf.gather_nd(boxes, ix)
 
