@@ -52,7 +52,7 @@ class PyramidROIAlign(keras.layers.Layer):
         config['pool_shape'] = self.pool_shape
         return config
 
-    def call(self, boxes, feature_maps, config):
+    def call(self, boxes, positive_indices, feature_maps, config):
         # boxes: Crop boxes [batch, num_boxes, (y1, x1, y2, x2)] in normalized coords
         # feature_maps: List of feature maps from different level of the
         #               feature pyramid. Each is [batch, height, width, channels]
@@ -73,7 +73,7 @@ class PyramidROIAlign(keras.layers.Layer):
         pooled = []
         box_to_level = []
         for i, level in enumerate(range(3, 6)):
-            ix = tf.compat.v1.where(tf.equal(roi_level, level))
+            ix = tf.compat.v1.where(tf.equal(roi_level, level) and tf.equal(positive_indices, 1))
             level_boxes = tf.gather_nd(boxes, ix)
 
             # Box indices for crop_and_resize.
@@ -199,7 +199,7 @@ class MaskHead(keras.layers.Layer):
         self.final_conv = layers.TimeDistributed(layers.Conv2D(config.NUM_CLASSES, (1, 1), strides=1, activation="sigmoid"),
                            name="mrcnn_mask")
 
-    def call(self, rois, feature_maps,
+    def call(self, rois, positive_indices, feature_maps,
         num_classes, config):
         """Builds the computation graph of the mask head of Feature Pyramid Network.
 
@@ -215,7 +215,7 @@ class MaskHead(keras.layers.Layer):
         """
         # ROI Pooling
         # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
-        x = self.roiAlign(rois, feature_maps, config)
+        x = self.roiAlign(rois, positive_indices, feature_maps, config)
 
         # Conv layers
         x = self.conv_1(x)
