@@ -123,15 +123,7 @@ class MaskED(tf.keras.Model):
 
         pred.update(self.detect(pred, img_shape=tf.shape(inputs)))
 
-        pos_idx = tf.zeros(tf.shape(pred['detection_boxes'])[:2], dtype=tf.int32) 
-        pos_range = [tf.range(i) for i in pred['num_detections']]
-
-        pos_update_idx = [tf.stack((tf.tile([i], tf.shape(j)), j), axis=1) for i,j in zip(range(tf.shape(pos_idx)[0]), pos_range)]
-
-        pos_update_idx = tf.concat(pos_update_idx, axis=0)
-        pos_idx = tf.tensor_scatter_nd_update(pos_idx, pos_update_idx, tf.tile([1], [tf.reduce_sum(pred['num_detections'])]))
         masks = self.mask_head(pred['detection_boxes'],
-                        pos_idx,
                         features[:-2],
                         self.num_classes,
                         self.config)
