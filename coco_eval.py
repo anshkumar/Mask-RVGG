@@ -1,5 +1,4 @@
 import tensorflow as tf
-import yolact
 from pycocotools import mask as m
 import numpy as np
 import cv2
@@ -130,23 +129,29 @@ def main(argv):
 
             for i in range(det_num):
                 count_id += 1
-                _mask = det_masks[i]
-                _mask = cv2.resize(_mask, (_w, _h))
-                mask = np.array(_mask > 0.5, dtype=np.bool, order='F')
-                rle_mask = m.encode(mask)
-                rle_mask['counts'] = rle_mask['counts'].decode('ascii')
 
                 _y1, _x1, _y2, _x2  = det_boxes[i].astype(int)
                 _y1, _x1, _y2, _x2 = int(_y1), int(_x1), int(_y2), int(_x2)
+                boxW = _x2 - _x1
+                boxH = _y2 - _y1
                 _class = int(det_classes[i])
+
+                rle_mask = None
+                _m = det_masks[i][:, :, _class-1]
+                if boxW > 0 and boxH > 0:
+                  _m = cv2.resize(_m, (boxW, boxH))
+                  mask = np.array(_m > 0.5, dtype=np.bool, order='F')
+                  rle_mask = m.encode(mask)
+                  rle_mask['counts'] = rle_mask['counts'].decode('ascii')
+
+                  mask = (_m > 0.5)
+                  roi = image_org[_y1:_y2, _x1:_x2][mask]
+                  blended = roi.astype("uint8")
+                  image_org[_y1:_y2, _x1:_x2][mask] = blended*[0,0,1]
 
                 cv2.rectangle(image_org, (_x1, _y1), (_x2, _y2), (0, 255, 0), 2)
                 cv2.putText(image_org, str(_class)+'; '+str(round(det_scores[i],2)), (_x1, _y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), lineType=cv2.LINE_AA)
-                mask = (_mask > 0.5)
-                roi = image_org[mask]
-                blended = roi.astype("uint8")
-                image_org[mask] = blended*[0,0,1]
-
+                
                 annotations_lst.append({
                     "image_id": _info["id"],
                     "category_id": _class,

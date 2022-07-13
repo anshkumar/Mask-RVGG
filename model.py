@@ -92,10 +92,10 @@ class MaskED(tf.keras.Model):
         self.config = config
 
     @tf.function
-    def call(self, inputs, training=False):
+    def call(self, inputs, training=False, gt_boxes=None):
         inputs = tf.cast(inputs, tf.float32)
 
-        c3, c4, c5 = self.backbone(inputs, training=True)  
+        c3, c4, c5 = self.backbone(inputs, training=False)  
         features = self.backbone_fpn(c3, c4, c5)    
 
         # Prediction Head branch
@@ -122,11 +122,16 @@ class MaskED(tf.keras.Model):
         }
 
         pred.update(self.detect(pred, img_shape=tf.shape(inputs)))
-
-        masks = self.mask_head(pred['detection_boxes'],
+        if training:
+            masks = self.mask_head(gt_boxes,
                         features[:-2],
                         self.num_classes,
                         self.config)
+        else:
+            masks = self.mask_head(pred['detection_boxes'],
+                            features[:-2],
+                            self.num_classes,
+                            self.config)
         pred.update({'detection_masks': masks})
 
         return pred

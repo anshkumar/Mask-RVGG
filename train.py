@@ -319,7 +319,7 @@ def main(argv):
                       'arithmetic_optimization': True,
                       'remapping': True}):
             with tf.GradientTape() as tape:
-                output = model(image, training=True)
+                output = model(image, training=True, gt_boxes=labels['boxes_norm'])
 
                 loc_loss, conf_loss, mask_loss, mask_iou_loss, \
                     = criterion(model, output, labels, config.NUM_CLASSES+1, image)

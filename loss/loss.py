@@ -36,10 +36,12 @@ class Loss(object):
         self.pred_cls = pred['classification']
         self.pred_offset = pred['regression']
         self.pred_mask = pred['detection_masks']
+        self.pred_bbox = pred['detection_boxes']
 
         # all label component
         self.gt_offset = label['all_offsets']
         self.conf_gt = label['conf_gt']
+        self.gt_bbox = label['boxes_norm']
         self.prior_max_box = label['prior_max_box']
         self.prior_max_index = label['prior_max_index']
 
@@ -161,9 +163,19 @@ class Loss(object):
         return [loss_conf]
 
     def _loss_mask(self, use_cropped_mask=True):
+        # pred_bbox = tf.reshape(self.pred_bbox, (-1, 4))
+        # gt_bbox = tf.reshape(self.gt_bbox, (-1,4))
+        # iou = utils._iou(pred_bbox, gt_bbox)
+        # iou_max = tf.reduce_max(iou, axis=-1)
+        # iou_max_id = tf.where(iou_max > 0.7)
         
+        # if tf.shape(iou_max_id)[0] == 0:
+        #     return [0.0], [0.0]
+
         p_mask = tf.reshape(self.pred_mask, (-1, tf.shape(self.pred_mask)[2], tf.shape(self.pred_mask)[3], tf.shape(self.pred_mask)[4]))
         gt_mask = tf.reshape(self.masks, (-1, tf.shape(self.masks)[2], tf.shape(self.masks)[3]))
+        # p_mask = tf.gather_nd(p_mask, iou_max_id)
+        # gt_mask = tf.gather_nd(gt_mask, iou_max_id)
         classes = tf.reshape(self.classes, [-1])
         class_gt_id = tf.where(classes > 0)
 
