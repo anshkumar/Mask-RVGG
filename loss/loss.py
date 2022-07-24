@@ -163,21 +163,30 @@ class Loss(object):
         return [loss_conf]
 
     def _loss_mask(self, use_cropped_mask=True):
-        # pred_bbox = tf.reshape(self.pred_bbox, (-1, 4))
-        # gt_bbox = tf.reshape(self.gt_bbox, (-1,4))
-        # iou = utils._iou(pred_bbox, gt_bbox)
-        # iou_max = tf.reduce_max(iou, axis=-1)
-        # iou_max_id = tf.where(iou_max > 0.7)
+        pred_bbox = tf.reshape(self.pred_bbox, (-1, 4))
+        gt_bbox = tf.reshape(self.gt_bbox, (-1,4))
+        iou = utils._iou(pred_bbox, gt_bbox)
+        iou_max = tf.reduce_max(iou, axis=-1)
+        iou_max_id = tf.where(iou_max > 0.5)
         
-        # if tf.shape(iou_max_id)[0] == 0:
-        #     return [0.0], [0.0]
+        if tf.shape(iou_max_id)[0] == 0:
+            return [0.0], [0.0]
 
         p_mask = tf.reshape(self.pred_mask, (-1, tf.shape(self.pred_mask)[2], tf.shape(self.pred_mask)[3], tf.shape(self.pred_mask)[4]))
         gt_mask = tf.reshape(self.masks, (-1, tf.shape(self.masks)[2], tf.shape(self.masks)[3]))
-        # p_mask = tf.gather_nd(p_mask, iou_max_id)
-        # gt_mask = tf.gather_nd(gt_mask, iou_max_id)
+        p_mask = tf.gather_nd(p_mask, iou_max_id)
+        gt_mask = tf.gather_nd(gt_mask, iou_max_id)
         classes = tf.reshape(self.classes, [-1])
         class_gt_id = tf.where(classes > 0)
+
+        gt_mask = tf.expand_dims(gt_mask, axis=-1)
+        gt_mask = tf.image.crop_and_resize(gt_mask, 
+            boxes=pred_bbox,
+            box_indices=tf.range(tf.shape(pred_bbox)[0]),
+            crop_size=self.config.MASK_SHAPE)
+
+        gt_mask = tf.squeeze(gt_mask)
+        gt_mask = tf.cast(gt_mask + 0.5, tf.uint8)
 
         pos_p_masks = tf.gather_nd(p_mask, class_gt_id)
         pos_gt_masks = tf.gather_nd(gt_mask, class_gt_id)
