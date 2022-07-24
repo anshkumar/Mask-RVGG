@@ -177,8 +177,13 @@ class Loss(object):
         p_mask = tf.gather_nd(p_mask, iou_max_id)
         gt_mask = tf.gather_nd(gt_mask, iou_max_id)
         classes = tf.reshape(self.classes, [-1])
+        classes = tf.gather_nd(classes, iou_max_id)
         class_gt_id = tf.where(classes > 0)
 
+        if tf.shape(class_gt_id)[0] == 0:
+            return [0.0], [0.0]
+
+        pred_bbox = tf.gather_nd(pred_bbox, iou_max_id)
         gt_mask = tf.expand_dims(gt_mask, axis=-1)
         gt_mask = tf.image.crop_and_resize(gt_mask, 
             boxes=pred_bbox,
@@ -188,11 +193,11 @@ class Loss(object):
         gt_mask = tf.squeeze(gt_mask)
         gt_mask = tf.cast(gt_mask + 0.5, tf.uint8)
 
+        # Take only positive samples
         pos_p_masks = tf.gather_nd(p_mask, class_gt_id)
         pos_gt_masks = tf.gather_nd(gt_mask, class_gt_id)
-
-        # Gathering positive mask from ground truth
         pos_classes = tf.gather_nd(classes, class_gt_id)
+
         pos_p_masks = tf.transpose(pos_p_masks, (3,0,1,2))
         _idx = tf.stack((pos_classes, tf.range(tf.shape(pos_classes)[0], dtype=tf.int64)),axis=1)
         pos_p_masks = tf.gather_nd(pos_p_masks, _idx)

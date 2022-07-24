@@ -65,6 +65,11 @@ class Parser(object):
 
         image = tf.image.resize(image, 
             [self._output_size_h, self._output_size_w])
+        masks = tf.expand_dims(masks, axis=-1)
+        masks = tf.image.resize(masks, 
+            [self._output_size_h, self._output_size_w])
+        masks = tf.squeeze(masks)
+        masks = tf.cast(masks + 0.5, tf.uint8)
         masks = tf.cast(masks, tf.float32)
         
         boxes_norm = boxes
@@ -81,8 +86,8 @@ class Parser(object):
         num_padding = self._num_max_fix_padding - tf.shape(classes)[0]
         pad_classes = tf.zeros([num_padding], dtype=tf.int64)
         pad_boxes = tf.zeros([num_padding, 4])
-        pad_masks = tf.zeros([num_padding, self.config.MASK_SHAPE[0], 
-            self.config.MASK_SHAPE[1]])
+        pad_masks = tf.zeros([num_padding, self._output_size_h, 
+            self._output_size_w])
         boxes_norm = tf.concat([boxes_norm, pad_boxes], axis=0)
 
         if tf.shape(classes)[0] == 1:
