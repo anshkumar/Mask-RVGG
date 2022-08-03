@@ -2,11 +2,34 @@ import tensorflow as tf
 from tensorflow.keras import models
 from tensorflow.keras import initializers
 from tensorflow.keras import layers
+import tensorflow_addons as tfa
 import numpy as np
 import math
 
 MOMENTUM = 0.997
 EPSILON = 1e-4
+
+class WeightStandardizedConv2D(layers.Conv2D):
+    def convolution_op(self, inputs, kernel):
+        mean, var = tf.nn.moments(kernel, axes=[0, 1, 2], keepdims=True)
+        return tf.nn.conv2d(
+            inputs,
+            (kernel - mean) / tf.sqrt(var + 1e-10),
+            padding="VALID",
+            strides=list(self.strides),
+            name=self.__class__.__name__,
+        )
+
+class WeightStandardizedSeparableConv(layers.SeparableConv2D):
+    def convolution_op(self, inputs, kernel):
+        mean, var = tf.nn.moments(kernel, axes=[0, 1, 2], keepdims=True)
+        return tf.nn.conv2d(
+            inputs,
+            (kernel - mean) / tf.sqrt(var + 1e-10),
+            padding="VALID",
+            strides=list(self.strides),
+            name=self.__class__.__name__,
+        )
 
 class PriorProbability(tf.keras.initializers.Initializer):
     """ Apply a prior probability to the weights.
@@ -45,10 +68,10 @@ class ClassNet(models.Model):
                 'pointwise_initializer': initializers.VarianceScaling(),
             }
             options.update(kernel_initializer)
-            self.convs = [layers.SeparableConv2D(filters=width, bias_initializer='zeros', name=f'{self.name}/class-{i}',
+            self.convs = [WeightStandardizedSeparableConv(filters=width, bias_initializer='zeros', name=f'{self.name}/class-{i}',
                                                  **options)
                           for i in range(depth)]
-            self.head = layers.SeparableConv2D(filters=num_classes * num_anchors,
+            self.head = WeightStandardizedSeparableConv(filters=num_classes * num_anchors,
                                                bias_initializer=PriorProbability(probability=0.01),
                                                name=f'{self.name}/class-predict', **options)
         else:
@@ -56,16 +79,20 @@ class ClassNet(models.Model):
                 'kernel_initializer': initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None)
             }
             options.update(kernel_initializer)
-            self.convs = [layers.Conv2D(filters=width, bias_initializer='zeros', name=f'{self.name}/class-{i}',
+            self.convs = [WeightStandardizedConv2D(filters=width, bias_initializer='zeros', name=f'{self.name}/class-{i}',
                                         **options)
                           for i in range(depth)]
-            self.head = layers.Conv2D(filters=num_classes * num_anchors,
+            self.head = WeightStandardizedConv2D(filters=num_classes * num_anchors,
                                       bias_initializer=PriorProbability(probability=0.01),
                                       name='class-predict', **options)
-        self.bns = [
-            [layers.BatchNormalization(momentum=MOMENTUM, epsilon=EPSILON, name=f'{self.name}/class-{i}-bn-{j}') for j
+        self.gns = [
+            [tfa.layers.GroupNormalization(name=f'{self.name}/class-{i}-gn-{j}') for j
              in range(3, 8)]
             for i in range(depth)]
+        # self.bns = [
+        #     [layers.BatchNormalization(momentum=MOMENTUM, epsilon=EPSILON, name=f'{self.name}/class-{i}-bn-{j}') for j
+        #      in range(3, 8)]
+        #     for i in range(depth)]
         # self.bns = [[BatchNormalization(freeze=freeze_bn, name=f'{self.name}/class-{i}-bn-{j}') for j in range(3, 8)]
         #             for i in range(depth)]
         self.relu = layers.Lambda(lambda x: tf.nn.swish(x))
@@ -78,10 +105,10 @@ class ClassNet(models.Model):
         for level, feature in enumerate(features):
             for i in range(self.depth):
                 feature = self.convs[i](feature)
-                feature = self.bns[i][level](feature)
+                feature = self.gns[i][level](feature)
                 feature = self.relu(feature)
             output = self.head(feature)
             output = self.reshape(output)
-            output = self.activation(output)
+            #output = self.activation(output)
             outputs.append(output)
         return outputs

@@ -3,8 +3,9 @@ import tensorflow as tf
 from tensorflow.keras.applications.efficientnet_v2 import EfficientNetV2B0, EfficientNetV2B1, EfficientNetV2B2, EfficientNetV2B3
 from tensorflow.keras.applications.efficientnet_v2 import EfficientNetV2S, EfficientNetV2M, EfficientNetV2L
 from tensorflow.keras import layers
-from layers.fpn import FeaturePyramidNeck
-from layers.head import PredictionModule, FastMaskIoUNet
+from layers.biFPN import build_wBiFPN, build_BiFPN 
+from layers.boxNet import BoxNet
+from layers.classNet import ClassNet
 from layers.maskNet import MaskHead
 assert tf.__version__.startswith('2')
 from detection import Detect
@@ -42,19 +43,24 @@ class MaskED(tf.keras.Model):
         base_model.trainable = config.BASE_MODEL_TRAINABLE 
 
         # Freeze BatchNormalization in pre-trained backbone
-        #if config.FREEZE_BACKBONE_BN:
-        #    for layer in base_model.layers:
-        #        if isinstance(layer, tf.keras.layers.BatchNormalization):
-        #          layer.trainable = False
+        if config.FREEZE_BACKBONE_BN:
+           for layer in base_model.layers:
+               if isinstance(layer, tf.keras.layers.BatchNormalization):
+                 layer.trainable = False
 
         outputs=[base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
-        self.backbone_fpn = FeaturePyramidNeck(config.FPN_FEATURE_MAP_SIZE)
-        self.predictionHead = PredictionModule(config.FPN_FEATURE_MAP_SIZE, sum(len(x)*len(config.ANCHOR_SCALES[0]) for x in config.ANCHOR_RATIOS[0]), 
-                                               config.NUM_CLASSES+1)
+        if config.WEIGHTED_BIFPN:
+            fpn_features = [None, None]+outputs
+            for i in range(config.D_BIFPN):
+                fpn_features = build_wBiFPN(fpn_features, config.W_BIFPN, i, freeze_bn=config.FPN_FREEZE_BN)
+        else:
+            fpn_features = [None, None]+outputs
+            for i in range(config.D_BIFPN):
+                fpn_features = build_BiFPN(fpn_features, config.W_BIFPN, i, freeze_bn=config.FPN_FREEZE_BN)
         
         # extract certain feature maps for FPN
         self.backbone = tf.keras.Model(inputs=base_model.input,
-                                       outputs=outputs)
+                                       outputs=fpn_features)
 
         self.mask_head = MaskHead(config)
 
@@ -80,6 +86,11 @@ class MaskED(tf.keras.Model):
                               aspect_ratio=config.ANCHOR_RATIOS,
                               scale=config.ANCHOR_SCALES)
 
+        self.box_net = BoxNet(config.W_BIFPN, config.D_HEAD, num_anchors=9, separable_conv=config.SEPARABLE_CONV, freeze_bn=config.FPN_FREEZE_BN,
+                     detect_quadrangle=config.DETECT_QUADRANGLE, name='box_net')
+        self.class_net = ClassNet(config.W_BIFPN, config.D_HEAD, num_classes=config.NUM_CLASSES+1, num_anchors=9,
+                             separable_conv=config.SEPARABLE_CONV, freeze_bn=config.FPN_FREEZE_BN, name='class_net')
+
         self.num_anchors = anchorobj.num_anchors
         self.priors = anchorobj.anchors
 
@@ -95,24 +106,15 @@ class MaskED(tf.keras.Model):
     def call(self, inputs, training=False):
         inputs = tf.cast(inputs, tf.float32)
 
-        c3, c4, c5 = self.backbone(inputs, training=False)  
-        features = self.backbone_fpn(c3, c4, c5)    
+        features = self.backbone(inputs, training=False)
 
-        # Prediction Head branch
-        pred_cls = []
-        pred_offset = []
-        boxes_feature_level = []
+        classification = self.class_net(features)
+        classification = layers.Concatenate(axis=1, name='classification')(classification)
+        regression = self.box_net(features)
 
-        # all output from FPN use same prediction head
-        for i, feature in enumerate(features):
-            cls, offset = self.predictionHead(feature)
-            pred_cls.append(cls)
-            pred_offset.append(offset)
-            boxes_feature_level.append(tf.tile([[i+1]],[tf.shape(offset)[0], tf.shape(offset)[1]]))
-
-        classification = tf.concat(pred_cls, axis=1, name='classification')
-        regression = tf.concat(pred_offset, axis=1, name='regression')
-        boxes_feature_level = tf.concat(boxes_feature_level, axis=1, name='boxes_feature_level')
+        boxes_feature_level = [tf.tile([[i+1]],[tf.shape(regression[i])[0], tf.shape(regression[i])[1]]) for i, feature in enumerate(features)]
+        boxes_feature_level = layers.Concatenate(axis=1, name='boxes_feature_level')(boxes_feature_level)
+        regression = layers.Concatenate(axis=1, name='regression')(regression)
 
         pred = {
             'regression': regression,
@@ -122,10 +124,12 @@ class MaskED(tf.keras.Model):
         }
 
         pred.update(self.detect(pred, img_shape=tf.shape(inputs)))
-        masks = self.mask_head(pred['detection_boxes'],
-                        features[:-2],
-                        self.num_classes,
-                        self.config)
-        pred.update({'detection_masks': masks})
+
+        if self.config.PREDICT_MASK:
+            masks = self.mask_head(pred['detection_boxes'],
+                            features[:-2],
+                            self.num_classes,
+                            self.config)
+            pred.update({'detection_masks': masks})
 
         return pred

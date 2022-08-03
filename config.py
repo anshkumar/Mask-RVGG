@@ -18,7 +18,7 @@ class Config(object):
     BASE_MODEL_TRAINABLE = True
     FREEZE_BACKBONE_BN = True
 
-    BATCH_SIZE = 8 # Batch size per GPU
+    BATCH_SIZE = 32 # Batch size per GPU
     # (Height, Width, Channels)
     # [512, 640, 768, 896, 1024, 1280, 1408]
     IMAGE_SHAPE = [512, 512, 3]
@@ -33,22 +33,22 @@ class Config(object):
 
     FPN_FEATURE_MAP_SIZE = 256
     ###########################################################################
-    # # [64, 88, 112, 160, 224, 288, 384]
-    # W_BIFPN = 64
+    # [64, 88, 112, 160, 224, 288, 384]
+    W_BIFPN = 64
 
-    # # [3, 4, 5, 6, 7, 7, 8]
-    # D_BIFPN = 3
+    # [3, 4, 5, 6, 7, 7, 8]
+    D_BIFPN = 3
 
-    # # [3, 3, 3, 4, 4, 4, 5]
-    # D_HEAD = 3
+    # [3, 3, 3, 4, 4, 4, 5]
+    D_HEAD = 3
 
-    # WEIGHTED_BIFPN = False
+    WEIGHTED_BIFPN = True
 
-    # FPN_FREEZE_BN = False
+    FPN_FREEZE_BN = False
 
-    # SEPARABLE_CONV = True
+    SEPARABLE_CONV = True
 
-    # DETECT_QUADRANGLE = False
+    DETECT_QUADRANGLE = False
     ###########################################################################
 
     # Number of classification classes (excluding background)
@@ -56,7 +56,7 @@ class Config(object):
 
     MAX_OUTPUT_SIZE = 100
     PER_CLASS_MAX_OUTPUT_SIZE = 100
-    CONF_THRESH = 0.05
+    CONF_THRESH = 0.01
     NMS_THRESH = 0.5
 
     # Maximum number of ground truth instances to use in one image
@@ -65,6 +65,7 @@ class Config(object):
     # Size of the top-down layers used to build the feature pyramid
     TOP_DOWN_PYRAMID_SIZE = 256
 
+    PREDICT_MASK = False
     # Pooled ROIs
     MASK_POOL_SIZE = 7
 
@@ -76,10 +77,9 @@ class Config(object):
     #     None: Train BN layers. This is the normal mode
     #     False: Freeze BN layers. Good when using a small batch size
     #     True: (don't use). Set layer in training mode even when predicting
-    TRAIN_BN = True  # Defaulting to False since batch size is often small
+    TRAIN_BN = True 
 
     # Loss weights for more precise optimization.
-    # Can be used for R-CNN training setup.
     LOSS_WEIGHTS = {
         "loss_weight_cls": 1.,
         "loss_weight_box": 1.,
@@ -97,11 +97,11 @@ class Config(object):
     # The Mask RCNN paper uses lr=0.02, but on TensorFlow it causes
     # weights to explode. Likely due to differences in optimizer
     # implementation.
-    # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW']
-    OPTIMIZER = 'SGD'
-    LEARNING_RATE = 4e-3
+    # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW', 'AdaBelief']
+    OPTIMIZER = 'Adam'
+    LEARNING_RATE = 6e-4
     N_WARMUP_STEPS = 500
-    WARMUP_LR = 4e-4
+    WARMUP_LR = 1e-4
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
     TRAIN_ITER = 800000
@@ -110,8 +110,9 @@ class Config(object):
     # Weight decay regularization
     WEIGHT_DECAY = 5*1e-4
 
-    # Gradient norm clipping
-    GRADIENT_CLIP_NORM = 10.0
+    # Gradient norm clipping or AGC (Will use either one of them.)
+    GRADIENT_CLIP_NORM = None #5.0
+    USE_AGC = True
 
     MATCH_THRESHOLD = 0.5
     UNMATCHED_THRESHOLD = 0.5

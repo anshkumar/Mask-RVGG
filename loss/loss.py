@@ -1,5 +1,4 @@
 import tensorflow as tf
-import tensorflow_addons as tfa
 import time
 from utils import utils
 
@@ -35,8 +34,9 @@ class Loss(object):
         # all prediction component
         self.pred_cls = pred['classification']
         self.pred_offset = pred['regression']
-        self.pred_mask = pred['detection_masks']
         self.pred_bbox = pred['detection_boxes']
+        if self.config.PREDICT_MASK:
+            self.pred_mask = pred['detection_masks']
 
         # all label component
         self.gt_offset = label['all_offsets']
@@ -45,7 +45,8 @@ class Loss(object):
         self.prior_max_box = label['prior_max_box']
         self.prior_max_index = label['prior_max_index']
 
-        self.masks = label['mask_target']
+        if self.config.PREDICT_MASK:
+            self.masks = label['mask_target']
         self.classes = label['classes']
         self.num_classes = num_classes
         self.model = model
@@ -59,30 +60,44 @@ class Loss(object):
         else:
             conf_loss = self._focal_conf_sigmoid_loss()
 
-        mask_loss, mask_iou_loss = self._loss_mask() 
+        if self.config.PREDICT_MASK:
+            mask_loss, mask_iou_loss = self._loss_mask() 
+        else:
+            mask_loss, mask_iou_loss = [0.0], [0.0]
         
         return loc_loss, conf_loss, mask_loss, mask_iou_loss
 
-    def _loss_location(self):
+    def _loss_location(self, sigma=3.0):
+        sigma_squared = sigma ** 2
+
         # only compute losses from positive samples
         # get postive indices
         pos_indices = tf.where(self.conf_gt > 0 )
         pred_offset = tf.gather_nd(self.pred_offset, pos_indices)
         gt_offset = tf.gather_nd(self.gt_offset, pos_indices)
 
-        # calculate the smoothL1(positive_pred, positive_gt) and return
-        num_pos = tf.shape(gt_offset)[0]
+        num_pos = tf.cast(tf.reduce_sum(tf.shape(gt_offset)[0]), tf.float32)
+
+        # compute smooth L1 loss
+        # f(x) = 0.5 * (sigma * x)^2          if |x| < 1 / sigma / sigma
+        #        |x| - 0.5 / sigma / sigma    otherwise
+        # regression_diff = pred_offset - gt_offset
+        # regression_diff = tf.keras.backend.abs(regression_diff)
+        # loss_loc = tf.where(
+        #     tf.keras.backend.less(regression_diff, 1.0 / sigma_squared),
+        #     0.5 * sigma_squared * tf.keras.backend.pow(regression_diff, 2),
+        #     regression_diff - 0.5 / sigma_squared
+        # )
+
         smoothl1loss = tf.keras.losses.Huber(delta=1., reduction=tf.keras.losses.Reduction.NONE)
         if tf.reduce_sum(tf.cast(num_pos, tf.float32)) > 0.0:
             loss_loc = smoothl1loss(gt_offset, pred_offset)
         else:
             loss_loc = 0.0
-
         tf.debugging.assert_all_finite(loss_loc, "Loss Location NaN/Inf")
+        return [tf.math.divide_no_nan(tf.reduce_sum(loss_loc), num_pos)*self._loss_weight_box]
 
-        return [tf.reduce_mean(loss_loc)]
-
-    def _focal_conf_sigmoid_loss(self, focal_loss_alpha=0.75, focal_loss_gamma=2):
+    def _focal_conf_sigmoid_loss(self, alpha=0.25, gamma=1.5):
         """
         Focal loss but using sigmoid like the original paper.
         """
@@ -92,20 +107,28 @@ class Loss(object):
         labels = tf.gather_nd(labels, indices)
         pred_cls = tf.gather_nd(self.pred_cls, indices)
 
-        fl = tfa.losses.SigmoidFocalCrossEntropy(from_logits=True, 
-            reduction=tf.keras.losses.Reduction.NONE)
-        loss = fl(y_true=labels, y_pred=pred_cls)
-        
-        return [tf.reduce_mean(loss)]
+        # compute the focal loss
+        alpha_factor = tf.keras.backend.ones_like(labels) * alpha
+        alpha_factor = tf.where(tf.keras.backend.equal(labels, 1), alpha_factor, 1 - alpha_factor)
+        # (1 - 0.99) ** 2 = 1e-4, (1 - 0.9) ** 2 = 1e-2
+        focal_weight = tf.where(tf.keras.backend.equal(labels, 1), 1 - pred_cls, pred_cls)
+        focal_weight = alpha_factor * focal_weight ** gamma
+        loss = focal_weight * tf.keras.backend.binary_crossentropy(labels, pred_cls, from_logits=True)
+                
+        pos_indices = tf.where(self.conf_gt > 0 )
+        num_pos = tf.shape(pos_indices)[0]
+        return [tf.math.divide_no_nan(tf.reduce_sum(loss), tf.cast(num_pos, tf.float32))*self._loss_weight_cls]
+        # return [tf.reduce_mean(loss)*self._loss_weight_cls]
 
     def _loss_class(self):
-        scce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+        scce = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=False,
             reduction=tf.keras.losses.Reduction.NONE)
 
         loss_conf = scce(tf.cast(self.conf_gt, dtype=tf.int32), self.pred_cls, 
                             self._loss_weight_cls)
-    
-        return [tf.reduce_mean(loss_conf)]
+        pos_indices = tf.where(self.conf_gt > 0 )
+        num_pos = tf.shape(pos_indices)[0]
+        return [tf.math.divide_no_nan(tf.reduce_sum(loss_conf), tf.cast(num_pos, tf.float32))*self._loss_weight_cls]
 
     def _loss_class_ohem(self):
         # num_cls includes background
@@ -160,7 +183,7 @@ class Loss(object):
             loss_conf = tf.reduce_sum(cce(target_labels, target_logits)) / tf.reduce_sum(tf.cast(num_pos, tf.float32)+tf.cast(num_neg, tf.float32))
         else:
             loss_conf = 0.0
-        return [loss_conf]
+        return [loss_conf*self._loss_weight_cls]
 
     def _loss_mask(self, use_cropped_mask=True):
         pred_bbox = tf.reshape(self.pred_bbox, (-1, 4))
@@ -169,49 +192,45 @@ class Loss(object):
         iou_max = tf.reduce_max(iou, axis=-1)
         iou_max_id = tf.where(iou_max > 0.5)
         
-        if tf.shape(iou_max_id)[0] == 0:
-            return [0.0], [0.0]
-
-        p_mask = tf.reshape(self.pred_mask, (-1, tf.shape(self.pred_mask)[2], tf.shape(self.pred_mask)[3], tf.shape(self.pred_mask)[4]))
-        gt_mask = tf.reshape(self.masks, (-1, tf.shape(self.masks)[2], tf.shape(self.masks)[3]))
-        p_mask = tf.gather_nd(p_mask, iou_max_id)
-        gt_mask = tf.gather_nd(gt_mask, iou_max_id)
         classes = tf.reshape(self.classes, [-1])
         classes = tf.gather_nd(classes, iou_max_id)
         class_gt_id = tf.where(classes > 0)
-
-        if tf.shape(class_gt_id)[0] == 0:
+        
+        if tf.shape(iou_max_id)[0] == 0 or tf.shape(class_gt_id)[0] == 0:
             return [0.0], [0.0]
+            p_mask = tf.reshape(self.pred_mask, (-1, tf.shape(self.pred_mask)[2], tf.shape(self.pred_mask)[3], tf.shape(self.pred_mask)[4]))
+            gt_mask = tf.reshape(self.masks, (-1, tf.shape(self.masks)[2], tf.shape(self.masks)[3]))
+            p_mask = tf.gather_nd(p_mask, iou_max_id)
+            gt_mask = tf.gather_nd(gt_mask, iou_max_id)
+            
+            pred_bbox = tf.gather_nd(pred_bbox, iou_max_id)
+            gt_mask = tf.expand_dims(gt_mask, axis=-1)
+            gt_mask = tf.image.crop_and_resize(gt_mask, 
+                boxes=pred_bbox,
+                box_indices=tf.range(tf.shape(pred_bbox)[0]),
+                crop_size=self.config.MASK_SHAPE)
 
-        pred_bbox = tf.gather_nd(pred_bbox, iou_max_id)
-        gt_mask = tf.expand_dims(gt_mask, axis=-1)
-        gt_mask = tf.image.crop_and_resize(gt_mask, 
-            boxes=pred_bbox,
-            box_indices=tf.range(tf.shape(pred_bbox)[0]),
-            crop_size=self.config.MASK_SHAPE)
+            gt_mask = tf.squeeze(gt_mask)
+            gt_mask = tf.cast(gt_mask + 0.5, tf.uint8)
+            gt_mask = tf.cast(gt_mask, tf.float32)
 
-        gt_mask = tf.squeeze(gt_mask)
-        gt_mask = tf.cast(gt_mask + 0.5, tf.uint8)
+            # Take only positive samples
+            pos_p_masks = tf.gather_nd(p_mask, class_gt_id)
+            pos_gt_masks = tf.gather_nd(gt_mask, class_gt_id)
+            pos_classes = tf.gather_nd(classes, class_gt_id)
 
-        # Take only positive samples
-        pos_p_masks = tf.gather_nd(p_mask, class_gt_id)
-        pos_gt_masks = tf.gather_nd(gt_mask, class_gt_id)
-        pos_classes = tf.gather_nd(classes, class_gt_id)
+            pos_p_masks = tf.transpose(pos_p_masks, (3,0,1,2))
+            _idx = tf.stack((pos_classes, tf.range(tf.shape(pos_classes)[0], dtype=tf.int64)),axis=1)
+            pos_p_masks = tf.gather_nd(pos_p_masks, _idx)
 
-        pos_p_masks = tf.transpose(pos_p_masks, (3,0,1,2))
-        _idx = tf.stack((pos_classes, tf.range(tf.shape(pos_classes)[0], dtype=tf.int64)),axis=1)
-        pos_p_masks = tf.gather_nd(pos_p_masks, _idx)
+            #Resizing to the input size
+            pos_p_masks = tf.expand_dims(pos_p_masks, axis=-1)
+            pos_p_masks = tf.image.resize(pos_p_masks, [self.config.MASK_SHAPE[0], self.config.MASK_SHAPE[1]], method=tf.image.ResizeMethod.BILINEAR)
+            pos_p_masks = pos_p_masks[:, :, :, 0]
 
-        #Resizing to the input size
-        pos_p_masks = tf.expand_dims(pos_p_masks, axis=-1)
-        pos_p_masks = tf.image.resize(pos_p_masks, [self.config.MASK_SHAPE[0], self.config.MASK_SHAPE[1]], method=tf.image.ResizeMethod.BILINEAR)
-        pos_p_masks = pos_p_masks[:, :, :, 0]
+            loss = tf.keras.backend.binary_crossentropy(pos_gt_masks, pos_p_masks, from_logits=False)
 
-        cce = tf.keras.losses.BinaryCrossentropy(from_logits=True,
-            reduction=tf.keras.losses.Reduction.NONE)
-        loss = cce(pos_gt_masks, pos_p_masks)
-
-        return [tf.reduce_mean(loss)], [0.0]
+            return [tf.reduce_mean(loss)], [0.0]
 
         '''
         # Mask IOU loss

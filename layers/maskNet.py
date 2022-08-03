@@ -69,7 +69,7 @@ class PyramidROIAlign(keras.layers.Layer):
             3, tf.cast(tf.math.ceil(5.0 + roi_level), dtype=tf.int32)))
         roi_level = tf.squeeze(roi_level, 2)
 
-        # Loop through levels and apply ROI pooling to each. P3 to P6.
+        # Loop through levels and apply ROI pooling to each. P3 to P5.
         pooled = []
         box_to_level = []
         for i, level in enumerate(range(3, 6)):
