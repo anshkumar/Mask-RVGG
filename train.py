@@ -125,6 +125,36 @@ def _get_categories_list(label_map_path):
           categories.append({'id': item.id, 'name': name})
     return categories
 
+def compute_norm(x, axis, keepdims):
+    return tf.math.reduce_sum(x ** 2, axis=axis, keepdims=keepdims) ** 0.5
+
+def unitwise_norm(x):
+    if len(x.get_shape()) <= 1:  # Scalars and vectors
+        axis = None
+        keepdims = False
+    elif len(x.get_shape()) in [2, 3]:  # Linear layers of shape IO or multihead linear
+        axis = 0
+        keepdims = True
+    elif len(x.get_shape()) == 4:  # Conv kernels of shape HWIO
+        axis = [0, 1, 2,]
+        keepdims = True
+    else:
+        raise ValueError(f"Got a parameter with shape not in [1, 2, 4]! {x}")
+    return compute_norm(x, axis, keepdims)
+
+
+def adaptive_clip_grad(parameters, gradients, clip_factor=0.01,
+                       eps=1e-3):
+    new_grads = []
+    for (params, grads) in zip(parameters, gradients):
+        p_norm = unitwise_norm(params)
+        max_norm = tf.math.maximum(p_norm, eps) * clip_factor
+        grad_norm = unitwise_norm(grads)
+        clipped_grad = grads * (max_norm / tf.math.maximum(grad_norm, 1e-6))
+        new_grad = tf.where(grad_norm < max_norm, grads, clipped_grad)
+        new_grads.append(new_grad)
+    return new_grads
+
 def main(argv):
     # set up Grappler for graph optimization
     # Ref: https://www.tensorflow.org/guide/graph_optimization
@@ -162,7 +192,7 @@ def main(argv):
                         add_decay_loss(layer, factor)
                 else:
                     for param in m.trainable_weights:
-                      if 'gamma' not in param.name and 'beta' not in param.name:
+                      # if 'gamma' not in param.name and 'beta' not in param.name:
                         with tf.keras.backend.name_scope('weight_regularizer'):
                             regularizer = lambda: tf.keras.regularizers.l2(factor)(param)
                             m.add_loss(regularizer)
@@ -201,16 +231,37 @@ def main(argv):
             total_steps=config.LR_TOTAL_STEPS)
           if config.GRADIENT_CLIP_NORM is not None:
             optimizer = tf.keras.optimizers.Adam(
-              learning_rate=lr_schedule, clipnorm=10)
+              learning_rate=lr_schedule, clipnorm=config.GRADIENT_CLIP_NORM)
           else:
             optimizer = tf.keras.optimizers.Adam(
               learning_rate=lr_schedule)
+        elif config.OPTIMIZER == 'AdamW':
+          lr_schedule = learning_rate_schedule.LearningRateSchedule(
+            warmup_steps=config.N_WARMUP_STEPS, 
+            warmup_lr=config.WARMUP_LR,
+            initial_lr=config.LEARNING_RATE, 
+            total_steps=config.LR_TOTAL_STEPS)
+          if config.GRADIENT_CLIP_NORM is not None:
+            optimizer = tfa.optimizers.AdamW(
+              learning_rate=lr_schedule, 
+              weight_decay=FLAGS.weight_decay, clipnorm=config.GRADIENT_CLIP_NORM)
+          else:
+            optimizer = tfa.optimizers.AdamW(
+              learning_rate=lr_schedule,
+              weight_decay=FLAGS.weight_decay)
+        elif config.OPTIMIZER == 'AdaBelief':
+          optimizer = tfa.optimizers.AdaBelief(
+              lr=config.LEARNING_RATE,
+              total_steps=config.LR_TOTAL_STEPS,
+              warmup_proportion=config.N_WARMUP_STEPS/config.LR_TOTAL_STEPS,
+              min_lr=config.LEARNING_RATE*config.LEARNING_RATE,
+              rectify=True)
 
         # setup checkpoints manager
         checkpoint = tf.train.Checkpoint(
           step=tf.Variable(1), optimizer=optimizer, model=model)
         manager = tf.train.CheckpointManager(
-            checkpoint, directory=FLAGS.checkpoints_dir, max_to_keep=5
+            checkpoint, directory=FLAGS.checkpoints_dir, max_to_keep=10
         )
         # restore from latest checkpoint and iteration
         status = checkpoint.restore(manager.latest_checkpoint)
@@ -306,20 +357,26 @@ def main(argv):
     logging.info("Start the training process...")
 
     # COCO evalator for showing MAP
-    coco_evaluator = coco_evaluation.CocoMaskEvaluator(
-      _get_categories_list(FLAGS.label_map))
+    if config.PREDICT_MASK:
+      coco_evaluator = coco_evaluation.CocoMaskEvaluator(
+        _get_categories_list(FLAGS.label_map))
+    else:
+      coco_evaluator = coco_evaluation.CocoDetectionEvaluator(
+        _get_categories_list(FLAGS.label_map))
 
     best_val = 1e10
     iterations = checkpoint.step.numpy()
 
     def train_step(image, labels):
+        clip_factor=0.01
+        eps=1e-3
         with options({'constant_folding': True,
                       'layout_optimize': True,
                       'loop_optimization': True,
                       'arithmetic_optimization': True,
                       'remapping': True}):
             with tf.GradientTape() as tape:
-                output = model(image, training=True, gt_boxes=labels['boxes_norm'])
+                output = model(image, training=True)
 
                 loc_loss, conf_loss, mask_loss, mask_iou_loss, \
                     = criterion(model, output, labels, config.NUM_CLASSES+1, image)
@@ -331,6 +388,12 @@ def main(argv):
     
                 total_loss = loc_loss + conf_loss + mask_loss + mask_iou_loss
             grads = tape.gradient(total_loss, model.trainable_variables)
+            if config.USE_AGC:
+              agc_gradients = adaptive_clip_grad(model.trainable_variables, grads, 
+                                                 clip_factor=clip_factor, eps=eps)
+              optimizer.apply_gradients(zip(agc_gradients, model.trainable_variables))
+              return (loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, agc_gradients)
+
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
             return (loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads)
 
@@ -391,6 +454,12 @@ def main(argv):
                 mask_iou.result(),
                 global_norm.result()
             ))
+            train_loss.reset_states()
+            loc.reset_states()
+            conf.reset_states()
+            mask.reset_states()
+            mask_iou.reset_states()
+            global_norm.reset_states()
 
         if iterations and iterations % FLAGS.save_interval == 0:
             # save checkpoint
@@ -428,58 +497,75 @@ def main(argv):
                         gt_boxes = valid_labels['boxes_norm'][b][:gt_num_box]
                         gt_boxes = gt_boxes.numpy()*np.array([_h,_w,_h,_w])
                         gt_classes = valid_labels['classes'][b][:gt_num_box].numpy()
-                        gt_masks = valid_labels['mask_target'][b][:gt_num_box].numpy()
 
-                        gt_masked_image = np.zeros((gt_num_box, _h, _w), dtype=np.uint8)
-                        for _b in range(gt_num_box):
-                            box = gt_boxes[_b]
-                            box = np.round(box).astype(int)
-                            (startY, startX, endY, endX) = box.astype("int")
-                            boxW = endX - startX
-                            boxH = endY - startY
-                            if boxW > 0 and boxH > 0:
-                              _m = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
-                              gt_masked_image[_b][startY:endY, startX:endX] = _m
+                        if config.PREDICT_MASK:
+                          gt_masks = valid_labels['mask_target'][b][:gt_num_box].numpy()
 
-                        coco_evaluator.add_single_ground_truth_image_info(
-                            image_id='image'+str(image_id),
-                            groundtruth_dict={
-                              standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
-                              standard_fields.InputDataFields.groundtruth_classes: gt_classes,
-                              standard_fields.InputDataFields.groundtruth_instance_masks: gt_masked_image
-                            })
+                          gt_masked_image = np.zeros((gt_num_box, _h, _w), dtype=np.uint8)
+                          for _b in range(gt_num_box):
+                              box = gt_boxes[_b]
+                              box = np.round(box).astype(int)
+                              (startY, startX, endY, endX) = box.astype("int")
+                              boxW = endX - startX
+                              boxH = endY - startY
+                              if boxW > 0 and boxH > 0:
+                                _m = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
+                                gt_masked_image[_b][startY:endY, startX:endX] = _m
 
-                        det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.05)
+                          coco_evaluator.add_single_ground_truth_image_info(
+                              image_id='image'+str(image_id),
+                              groundtruth_dict={
+                                standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
+                                standard_fields.InputDataFields.groundtruth_classes: gt_classes,
+                                standard_fields.InputDataFields.groundtruth_instance_masks: gt_masked_image
+                              })
+                        else:
+                          coco_evaluator.add_single_ground_truth_image_info(
+                              image_id='image'+str(image_id),
+                              groundtruth_dict={
+                                standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
+                                standard_fields.InputDataFields.groundtruth_classes: gt_classes,
+                              })
+
+                        det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.01)
 
                         det_boxes = output['detection_boxes'][b][:det_num]
                         det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
-                        det_masks = output['detection_masks'][b][:det_num].numpy()
-                        det_masks = (det_masks > 0.5).astype("uint8")
-
                         det_scores = output['detection_scores'][b][:det_num].numpy()
                         det_classes = output['detection_classes'][b][:det_num].numpy().astype(int)
 
-                        det_masked_image = np.zeros((det_num, _h, _w), dtype=np.uint8)
-                        for _b in range(det_num):
-                            box = det_boxes[_b]
-                            _c = det_classes[_b] - 1
-                            _m = det_masks[_b][:, :, _c]
-                            box = np.round(box).astype(int)
-                            (startY, startX, endY, endX) = box.astype("int")
-                            boxW = endX - startX
-                            boxH = endY - startY
-                            if boxW > 0 and boxH > 0:
-                              _m = cv2.resize(_m, (boxW, boxH))
-                              det_masked_image[_b][startY:endY, startX:endX] = _m
-                        
-                        coco_evaluator.add_single_detected_image_info(
-                            image_id='image'+str(image_id),
-                            detections_dict={
-                                standard_fields.DetectionResultFields.detection_boxes: det_boxes,
-                                standard_fields.DetectionResultFields.detection_scores: det_scores,
-                                standard_fields.DetectionResultFields.detection_classes: det_classes,
-                                standard_fields.DetectionResultFields.detection_masks: det_masked_image
-                            })
+                        if config.PREDICT_MASK:
+                          det_masks = output['detection_masks'][b][:det_num].numpy()
+                          det_masks = (det_masks > 0.5).astype("uint8")
+                          det_masked_image = np.zeros((det_num, _h, _w), dtype=np.uint8)
+                          for _b in range(det_num):
+                              box = det_boxes[_b]
+                              _c = det_classes[_b] - 1
+                              _m = det_masks[_b][:, :, _c]
+                              box = np.round(box).astype(int)
+                              (startY, startX, endY, endX) = box.astype("int")
+                              boxW = endX - startX
+                              boxH = endY - startY
+                              if boxW > 0 and boxH > 0:
+                                _m = cv2.resize(_m, (boxW, boxH))
+                                det_masked_image[_b][startY:endY, startX:endX] = _m
+                          
+                          coco_evaluator.add_single_detected_image_info(
+                              image_id='image'+str(image_id),
+                              detections_dict={
+                                  standard_fields.DetectionResultFields.detection_boxes: det_boxes,
+                                  standard_fields.DetectionResultFields.detection_scores: det_scores,
+                                  standard_fields.DetectionResultFields.detection_classes: det_classes,
+                                  standard_fields.DetectionResultFields.detection_masks: det_masked_image
+                              })
+                        else:
+                          coco_evaluator.add_single_detected_image_info(
+                              image_id='image'+str(image_id),
+                              detections_dict={
+                                  standard_fields.DetectionResultFields.detection_boxes: det_boxes,
+                                  standard_fields.DetectionResultFields.detection_scores: det_scores,
+                                  standard_fields.DetectionResultFields.detection_classes: det_classes,
+                              })
 
                 v_loc.update_state(valid_loc_loss)
                 v_conf.update_state(valid_conf_loss)
@@ -488,30 +574,56 @@ def main(argv):
                 valid_iter += 1
 
             metrics = coco_evaluator.evaluate()
-            precision_mAP.update_state(
-              metrics['DetectionMasks_Precision/mAP'])
-            precision_mAP_50IOU.update_state(
-              metrics['DetectionMasks_Precision/mAP@.50IOU'])
-            precision_mAP_75IOU.update_state(
-              metrics['DetectionMasks_Precision/mAP@.75IOU'])
-            precision_mAP_small.update_state(
-              metrics['DetectionMasks_Precision/mAP (small)'])
-            precision_mAP_medium.update_state(
-              metrics['DetectionMasks_Precision/mAP (medium)'])
-            precision_mAP_large.update_state(
-              metrics['DetectionMasks_Precision/mAP (large)'])
-            recall_AR_1.update_state(
-              metrics['DetectionMasks_Recall/AR@1'])
-            recall_AR_10.update_state(
-              metrics['DetectionMasks_Recall/AR@10'])
-            recall_AR_100.update_state(
-              metrics['DetectionMasks_Recall/AR@100'])
-            recall_AR_100_small.update_state(
-              metrics['DetectionMasks_Recall/AR@100 (small)'])
-            recall_AR_100_medium.update_state(
-              metrics['DetectionMasks_Recall/AR@100 (medium)'])
-            recall_AR_100_large.update_state(
-              metrics['DetectionMasks_Recall/AR@100 (large)'])
+            if config.PREDICT_MASK:
+              precision_mAP.update_state(
+                metrics['DetectionMasks_Precision/mAP'])
+              precision_mAP_50IOU.update_state(
+                metrics['DetectionMasks_Precision/mAP@.50IOU'])
+              precision_mAP_75IOU.update_state(
+                metrics['DetectionMasks_Precision/mAP@.75IOU'])
+              precision_mAP_small.update_state(
+                metrics['DetectionMasks_Precision/mAP (small)'])
+              precision_mAP_medium.update_state(
+                metrics['DetectionMasks_Precision/mAP (medium)'])
+              precision_mAP_large.update_state(
+                metrics['DetectionMasks_Precision/mAP (large)'])
+              recall_AR_1.update_state(
+                metrics['DetectionMasks_Recall/AR@1'])
+              recall_AR_10.update_state(
+                metrics['DetectionMasks_Recall/AR@10'])
+              recall_AR_100.update_state(
+                metrics['DetectionMasks_Recall/AR@100'])
+              recall_AR_100_small.update_state(
+                metrics['DetectionMasks_Recall/AR@100 (small)'])
+              recall_AR_100_medium.update_state(
+                metrics['DetectionMasks_Recall/AR@100 (medium)'])
+              recall_AR_100_large.update_state(
+                metrics['DetectionMasks_Recall/AR@100 (large)'])
+            else:
+              precision_mAP.update_state(
+                metrics['DetectionBoxes_Precision/mAP'])
+              precision_mAP_50IOU.update_state(
+                metrics['DetectionBoxes_Precision/mAP@.50IOU'])
+              precision_mAP_75IOU.update_state(
+                metrics['DetectionBoxes_Precision/mAP@.75IOU'])
+              precision_mAP_small.update_state(
+                metrics['DetectionBoxes_Precision/mAP (small)'])
+              precision_mAP_medium.update_state(
+                metrics['DetectionBoxes_Precision/mAP (medium)'])
+              precision_mAP_large.update_state(
+                metrics['DetectionBoxes_Precision/mAP (large)'])
+              recall_AR_1.update_state(
+                metrics['DetectionBoxes_Recall/AR@1'])
+              recall_AR_10.update_state(
+                metrics['DetectionBoxes_Recall/AR@10'])
+              recall_AR_100.update_state(
+                metrics['DetectionBoxes_Recall/AR@100'])
+              recall_AR_100_small.update_state(
+                metrics['DetectionBoxes_Recall/AR@100 (small)'])
+              recall_AR_100_medium.update_state(
+                metrics['DetectionBoxes_Recall/AR@100 (medium)'])
+              recall_AR_100_large.update_state(
+                metrics['DetectionBoxes_Recall/AR@100 (large)'])
 
             coco_evaluator.clear()
 
@@ -618,13 +730,6 @@ def main(argv):
                 options=save_options)
 
             # reset the metrics
-            train_loss.reset_states()
-            loc.reset_states()
-            conf.reset_states()
-            mask.reset_states()
-            mask_iou.reset_states()
-            global_norm.reset_states()
-
             valid_loss.reset_states()
             v_loc.reset_states()
             v_conf.reset_states()
