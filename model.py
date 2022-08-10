@@ -1,8 +1,8 @@
 import tensorflow as tf
 
-from tensorflow.keras.applications.efficientnet_v2 import EfficientNetV2B0, EfficientNetV2B1, EfficientNetV2B2, EfficientNetV2B3
-from tensorflow.keras.applications.efficientnet_v2 import EfficientNetV2S, EfficientNetV2M, EfficientNetV2L
+# from tensorflow.keras.applications import efficientnet_v2
 from tensorflow.keras import layers
+from backbone import efficientnet_v2
 from layers.biFPN import build_wBiFPN, build_BiFPN 
 from layers.boxNet import BoxNet
 from layers.classNet import ClassNet
@@ -22,19 +22,19 @@ class MaskED(tf.keras.Model):
     def __init__(self, config):
         super(MaskED, self).__init__()
 
-        backbones = {'efficientnetv2b0': EfficientNetV2B0, 
-                    'efficientnetv2b1': EfficientNetV2B1, 
-                    'efficientnetv2b2': EfficientNetV2B2, 
-                    'efficientnetv2b3': EfficientNetV2B3, 
-                    'efficientnetv2s': EfficientNetV2S, 
-                    'efficientnetv2m': EfficientNetV2M, 
-                    'efficientnetv2l': EfficientNetV2L}
+        backbones = {'efficientnetv2b0': efficientnet_v2.EfficientNetV2B0, 
+                    'efficientnetv2b1': efficientnet_v2.EfficientNetV2B1, 
+                    'efficientnetv2b2': efficientnet_v2.EfficientNetV2B2, 
+                    'efficientnetv2b3': efficientnet_v2.EfficientNetV2B3, 
+                    'efficientnetv2s': efficientnet_v2.EfficientNetV2S, 
+                    'efficientnetv2m': efficientnet_v2.EfficientNetV2M, 
+                    'efficientnetv2l': efficientnet_v2.EfficientNetV2L}
         out_layers = {'efficientnetv2b0': ['block3b_add','block5e_add','block6h_add'],
                     }
 
         base_model = backbones[config.BACKBONE](
                             include_top=False,
-                            weights='imagenet',
+                            weights=None,
                             input_shape=config.IMAGE_SHAPE,
                             include_preprocessing=True
                         )
@@ -106,7 +106,7 @@ class MaskED(tf.keras.Model):
     def call(self, inputs, training=False):
         inputs = tf.cast(inputs, tf.float32)
 
-        features = self.backbone(inputs, training=False)
+        features = self.backbone(inputs, training=True)
 
         classification = self.class_net(features)
         classification = layers.Concatenate(axis=1, name='classification')(classification)
