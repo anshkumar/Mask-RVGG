@@ -82,7 +82,7 @@ class Config(object):
     # Loss weights for more precise optimization.
     LOSS_WEIGHTS = {
         "loss_weight_cls": 1.,
-        "loss_weight_box": 1.,
+        "loss_weight_box": 1.5,
         "loss_weight_mask": 1.,
         "loss_weight_mask_iou": 1.,
     }
@@ -111,8 +111,8 @@ class Config(object):
     WEIGHT_DECAY = 5*1e-4
 
     # Gradient norm clipping or AGC (Will use either one of them.)
-    GRADIENT_CLIP_NORM = None #5.0
-    USE_AGC = True
+    GRADIENT_CLIP_NORM = 10.0
+    USE_AGC = False
 
     MATCH_THRESHOLD = 0.5
     UNMATCHED_THRESHOLD = 0.5
