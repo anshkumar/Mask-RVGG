@@ -33,7 +33,6 @@ from keras.utils import layer_utils
 import tensorflow.compat.v2 as tf
 # pylint: disable=g-direct-tensorflow-import
 from tensorflow.python.util.tf_export import keras_export
-import tensorflow_addons as tfa
 
 BASE_WEIGHTS_PATH = "https://storage.googleapis.com/tensorflow/keras-applications/efficientnet_v2/"
 
@@ -588,27 +587,6 @@ BASE_DOCSTRING = """Instantiates the {name} architecture.
     A `keras.Model` instance.
 """
 
-class WeightStandardizedConv2D(layers.Conv2D):
-    def convolution_op(self, inputs, kernel):
-        mean, var = tf.nn.moments(kernel, axes=[0, 1, 2], keepdims=True)
-        return tf.nn.conv2d(
-            inputs,
-            (kernel - mean) / tf.sqrt(var + 1e-10),
-            padding=self.padding.upper(),
-            strides=list(self.strides),
-            name=self.__class__.__name__,
-        )
-
-class WeightStandardizedDepthwiseConv2D(layers.DepthwiseConv2D):
-    def convolution_op(self, inputs, kernel):
-        mean, var = tf.nn.moments(kernel, axes=[0, 1, 2], keepdims=True)
-        return tf.nn.conv2d(
-            inputs,
-            (kernel - mean) / tf.sqrt(var + 1e-10),
-            padding=self.padding.upper(),
-            strides=list(self.strides),
-            name=self.__class__.__name__,
-        )
 
 def round_filters(filters, width_coefficient, min_depth, depth_divisor):
   """Round number of filters based on depth multiplier."""
@@ -648,7 +626,7 @@ def MBConvBlock(
     # Expansion phase
     filters = input_filters * expand_ratio
     if expand_ratio != 1:
-      x = WeightStandardizedConv2D(
+      x = layers.Conv2D(
           filters=filters,
           kernel_size=1,
           strides=1,
@@ -658,16 +636,17 @@ def MBConvBlock(
           use_bias=False,
           name=name + "expand_conv",
       )(inputs)
-      x = tfa.layers.GroupNormalization(
+      x = layers.BatchNormalization(
           axis=bn_axis,
-          name=name + "expand_gn",
+          momentum=bn_momentum,
+          name=name + "expand_bn",
       )(x)
       x = layers.Activation(activation, name=name + "expand_activation")(x)
     else:
       x = inputs
 
     # Depthwise conv
-    x = WeightStandardizedDepthwiseConv2D(
+    x = layers.DepthwiseConv2D(
         kernel_size=kernel_size,
         strides=strides,
         depthwise_initializer=CONV_KERNEL_INITIALIZER,
@@ -676,8 +655,8 @@ def MBConvBlock(
         use_bias=False,
         name=name + "dwconv2",
     )(x)
-    x = tfa.layers.GroupNormalization(
-        axis=bn_axis, name=name + "gn")(x)
+    x = layers.BatchNormalization(
+        axis=bn_axis, momentum=bn_momentum, name=name + "bn")(x)
     x = layers.Activation(activation, name=name + "activation")(x)
 
     # Squeeze and excite
@@ -710,7 +689,7 @@ def MBConvBlock(
       x = layers.multiply([x, se], name=name + "se_excite")
 
       # Output phase
-      x = WeightStandardizedConv2D(
+      x = layers.Conv2D(
           filters=output_filters,
           kernel_size=1,
           strides=1,
@@ -720,8 +699,8 @@ def MBConvBlock(
           use_bias=False,
           name=name + "project_conv",
       )(x)
-      x = tfa.layers.GroupNormalization(
-          groups=16, axis=bn_axis, name=name + "project_gn")(x)
+      x = layers.BatchNormalization(
+          axis=bn_axis, momentum=bn_momentum, name=name + "project_bn")(x)
 
       if strides == 1 and input_filters == output_filters:
         if survival_probability:
@@ -757,7 +736,7 @@ def FusedMBConvBlock(
   def apply(inputs):
     filters = input_filters * expand_ratio
     if expand_ratio != 1:
-      x = WeightStandardizedConv2D(
+      x = layers.Conv2D(
           filters,
           kernel_size=kernel_size,
           strides=strides,
@@ -767,8 +746,8 @@ def FusedMBConvBlock(
           use_bias=False,
           name=name + "expand_conv",
       )(inputs)
-      x = tfa.layers.GroupNormalization(
-          axis=bn_axis, name=name + "expand_gn")(x)
+      x = layers.BatchNormalization(
+          axis=bn_axis, momentum=bn_momentum, name=name + "expand_bn")(x)
       x = layers.Activation(
           activation=activation, name=name + "expand_activation")(x)
     else:
@@ -805,7 +784,7 @@ def FusedMBConvBlock(
       x = layers.multiply([x, se], name=name + "se_excite")
 
     # Output phase:
-    x = WeightStandardizedConv2D(
+    x = layers.Conv2D(
         output_filters,
         kernel_size=1 if expand_ratio != 1 else kernel_size,
         strides=1 if expand_ratio != 1 else strides,
@@ -814,8 +793,8 @@ def FusedMBConvBlock(
         use_bias=False,
         name=name + "project_conv",
     )(x)
-    x = tfa.layers.GroupNormalization(
-        groups=16, axis=bn_axis, name=name + "project_gn")(x)
+    x = layers.BatchNormalization(
+        axis=bn_axis, momentum=bn_momentum, name=name + "project_bn")(x)
     if expand_ratio == 1:
       x = layers.Activation(
           activation=activation, name=name + "project_activation")(x)
@@ -959,7 +938,7 @@ def EfficientNetV2(
       min_depth=min_depth,
       depth_divisor=depth_divisor,
   )
-  x = WeightStandardizedConv2D(
+  x = layers.Conv2D(
       filters=stem_filters,
       kernel_size=3,
       strides=2,
@@ -968,9 +947,10 @@ def EfficientNetV2(
       use_bias=False,
       name="stem_conv",
   )(x)
-  x = tfa.layers.GroupNormalization(
+  x = layers.BatchNormalization(
       axis=bn_axis,
-      name="stem_gn",
+      momentum=bn_momentum,
+      name="stem_bn",
   )(x)
   x = layers.Activation(activation, name="stem_activation")(x)
 
@@ -1019,7 +999,7 @@ def EfficientNetV2(
       width_coefficient=width_coefficient,
       min_depth=min_depth,
       depth_divisor=depth_divisor)
-  x = WeightStandardizedConv2D(
+  x = layers.Conv2D(
       filters=top_filters,
       kernel_size=1,
       strides=1,
@@ -1029,9 +1009,10 @@ def EfficientNetV2(
       use_bias=False,
       name="top_conv",
   )(x)
-  x = tfa.layers.GroupNormalization(
+  x = layers.BatchNormalization(
       axis=bn_axis,
-      name="top_gn",
+      momentum=bn_momentum,
+      name="top_bn",
   )(x)
   x = layers.Activation(activation=activation, name="top_activation")(x)
 

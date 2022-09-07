@@ -58,7 +58,7 @@ class Loss(object):
         elif self.config.LOSS_CLASSIFICATION == 'CROSSENTROPY':
             conf_loss = self._loss_class()
         else:
-            conf_loss = self._focal_conf_sigmoid_loss()
+            conf_loss = self._focal_conf_loss()
 
         if self.config.PREDICT_MASK:
             mask_loss, mask_iou_loss = self._loss_mask() 
@@ -97,7 +97,7 @@ class Loss(object):
         tf.debugging.assert_all_finite(loss_loc, "Loss Location NaN/Inf")
         return [tf.math.divide_no_nan(tf.reduce_sum(loss_loc), num_pos)*self._loss_weight_box]
 
-    def _focal_conf_sigmoid_loss(self, alpha=0.25, gamma=1.5):
+    def _focal_conf_loss(self, alpha=0.25, gamma=1.5):
         """
         Focal loss but using sigmoid like the original paper.
         """
@@ -113,7 +113,7 @@ class Loss(object):
         # (1 - 0.99) ** 2 = 1e-4, (1 - 0.9) ** 2 = 1e-2
         focal_weight = tf.where(tf.keras.backend.equal(labels, 1), 1 - pred_cls, pred_cls)
         focal_weight = alpha_factor * focal_weight ** gamma
-        loss = focal_weight * tf.keras.backend.binary_crossentropy(labels, pred_cls, from_logits=True)
+        loss = focal_weight * tf.keras.backend.binary_crossentropy(labels, pred_cls, from_logits=False)
                 
         pos_indices = tf.where(self.conf_gt > 0 )
         num_pos = tf.shape(pos_indices)[0]
@@ -178,7 +178,7 @@ class Loss(object):
         target_labels = tf.one_hot(tf.squeeze(target_labels), depth=self.num_classes)
 
         if tf.reduce_sum(tf.cast(num_pos, tf.float32)+tf.cast(num_neg, tf.float32)) > 0.0:
-            cce = tf.keras.losses.CategoricalCrossentropy(from_logits=True,
+            cce = tf.keras.losses.CategoricalCrossentropy(from_logits=False,
                 reduction=tf.keras.losses.Reduction.NONE)
             loss_conf = tf.reduce_sum(cce(target_labels, target_logits)) / tf.reduce_sum(tf.cast(num_pos, tf.float32)+tf.cast(num_neg, tf.float32))
         else:

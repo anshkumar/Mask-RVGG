@@ -50,7 +50,7 @@ class PriorProbability(tf.keras.initializers.Initializer):
         return result
 
 class ClassNet(models.Model):
-    def __init__(self, width, depth, num_classes=20, num_anchors=9, separable_conv=True, freeze_bn=False, **kwargs):
+    def __init__(self, width, depth, num_classes=20, num_anchors=9, separable_conv=True, freeze_bn=False, activation='SIGMOID', **kwargs):
         super(ClassNet, self).__init__(**kwargs)
         self.width = width
         self.depth = depth
@@ -97,7 +97,10 @@ class ClassNet(models.Model):
         #             for i in range(depth)]
         self.relu = layers.Lambda(lambda x: tf.nn.swish(x))
         self.reshape = layers.Reshape((-1, num_classes))
-        self.activation = layers.Activation('sigmoid')
+        if activation == 'SIGMOID':
+            self.activation = layers.Activation('sigmoid')
+        else:
+            self.activation = layers.Activation('softmax')
 
     def call(self, inputs, **kwargs):
         features = inputs
@@ -109,6 +112,6 @@ class ClassNet(models.Model):
                 feature = self.relu(feature)
             output = self.head(feature)
             output = self.reshape(output)
-            #output = self.activation(output)
+            output = self.activation(output)
             outputs.append(output)
         return outputs
