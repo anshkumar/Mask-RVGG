@@ -34,7 +34,7 @@ class MaskED(tf.keras.Model):
 
         base_model = backbones[config.BACKBONE](
                             include_top=False,
-                            weights=None,
+                            weights='imagenet',
                             input_shape=config.IMAGE_SHAPE,
                             include_preprocessing=True
                         )
@@ -44,19 +44,19 @@ class MaskED(tf.keras.Model):
 
         # Freeze BatchNormalization in pre-trained backbone
         if config.FREEZE_BACKBONE_BN:
-           for layer in base_model.layers:
-               if isinstance(layer, tf.keras.layers.BatchNormalization):
-                 layer.trainable = False
+          for layer in base_model.layers:
+              if isinstance(layer, tf.keras.layers.BatchNormalization):
+                layer.trainable = False
 
         outputs=[base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
         if config.WEIGHTED_BIFPN:
             fpn_features = [None, None]+outputs
             for i in range(config.D_BIFPN):
-                fpn_features = build_wBiFPN(fpn_features, config.W_BIFPN, i, freeze_bn=config.FPN_FREEZE_BN)
+                fpn_features = build_wBiFPN(fpn_features, config.W_BIFPN, i)
         else:
             fpn_features = [None, None]+outputs
             for i in range(config.D_BIFPN):
-                fpn_features = build_BiFPN(fpn_features, config.W_BIFPN, i, freeze_bn=config.FPN_FREEZE_BN)
+                fpn_features = build_BiFPN(fpn_features, config.W_BIFPN, i)
         
         # extract certain feature maps for FPN
         self.backbone = tf.keras.Model(inputs=base_model.input,
@@ -89,7 +89,8 @@ class MaskED(tf.keras.Model):
         self.box_net = BoxNet(config.W_BIFPN, config.D_HEAD, num_anchors=9, separable_conv=config.SEPARABLE_CONV, freeze_bn=config.FPN_FREEZE_BN,
                      detect_quadrangle=config.DETECT_QUADRANGLE, name='box_net')
         self.class_net = ClassNet(config.W_BIFPN, config.D_HEAD, num_classes=config.NUM_CLASSES+1, num_anchors=9,
-                             separable_conv=config.SEPARABLE_CONV, freeze_bn=config.FPN_FREEZE_BN, name='class_net')
+                             separable_conv=config.SEPARABLE_CONV, freeze_bn=config.FPN_FREEZE_BN, 
+                             activation=config.ACTIVATION, name='class_net')
 
         self.num_anchors = anchorobj.num_anchors
         self.priors = anchorobj.anchors
@@ -105,9 +106,10 @@ class MaskED(tf.keras.Model):
     @tf.function
     def call(self, inputs, training=False):
         inputs = tf.cast(inputs, tf.float32)
-
-        features = self.backbone(inputs, training=True)
-
+        #image_norm = tf.keras.layers.Normalization(mean=[0.485, 0.456, 0.406], variance=[np.square(0.299), np.square(0.224), np.square(0.225)])
+        #features = self.backbone(image_norm(inputs/255), training=True)
+        features = self.backbone(inputs, training=False)
+        
         classification = self.class_net(features)
         classification = layers.Concatenate(axis=1, name='classification')(classification)
         regression = self.box_net(features)

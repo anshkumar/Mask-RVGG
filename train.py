@@ -210,9 +210,9 @@ def main(argv):
         logging.info("Initiate the Optimizer and Loss function...")
         if config.OPTIMIZER == 'SGD':
           logging.info("Using SGD optimizer")
-          lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
-             [config.N_WARMUP_STEPS, int(0.35*config.TRAIN_ITER), int(0.75*config.TRAIN_ITER), int(0.875*config.TRAIN_ITER), int(0.9375*config.TRAIN_ITER)], 
-             [config.WARMUP_LR, config.LEARNING_RATE, 0.1*config.LEARNING_RATE, 0.01*config.LEARNING_RATE, 0.001*config.LEARNING_RATE, 0.0001*config.LEARNING_RATE])
+          #lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
+          #   [config.N_WARMUP_STEPS, int(0.35*config.TRAIN_ITER), int(0.75*config.TRAIN_ITER), int(0.875*config.TRAIN_ITER), int(0.9375*config.TRAIN_ITER)], 
+          #   [config.WARMUP_LR, config.LEARNING_RATE, 0.1*config.LEARNING_RATE, 0.01*config.LEARNING_RATE, 0.001*config.LEARNING_RATE, 0.0001*config.LEARNING_RATE])
           lr_schedule = learning_rate_schedule.LearningRateSchedule(
             warmup_steps=config.N_WARMUP_STEPS, 
             warmup_lr=config.WARMUP_LR,
@@ -224,11 +224,14 @@ def main(argv):
             optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM)
         elif config.OPTIMIZER == 'Adam':
           logging.info("Using Adam optimizer")
-          lr_schedule = learning_rate_schedule.LearningRateSchedule(
-            warmup_steps=config.N_WARMUP_STEPS, 
-            warmup_lr=config.WARMUP_LR,
-            initial_lr=config.LEARNING_RATE, 
-            total_steps=config.LR_TOTAL_STEPS)
+          lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
+             [config.N_WARMUP_STEPS, int(0.35*config.TRAIN_ITER), int(0.75*config.TRAIN_ITER), int(0.875*config.TRAIN_ITER), int(0.9375*config.TRAIN_ITER)], 
+             [config.WARMUP_LR, config.LEARNING_RATE, 0.1*config.LEARNING_RATE, 0.01*config.LEARNING_RATE, 0.001*config.LEARNING_RATE, 0.0001*config.LEARNING_RATE])
+          # lr_schedule = learning_rate_schedule.LearningRateSchedule(
+          #   warmup_steps=config.N_WARMUP_STEPS, 
+          #   warmup_lr=config.WARMUP_LR,
+          #   initial_lr=config.LEARNING_RATE, 
+          #   total_steps=config.LR_TOTAL_STEPS)
           if config.GRADIENT_CLIP_NORM is not None:
             optimizer = tf.keras.optimizers.Adam(
               learning_rate=lr_schedule, clipnorm=config.GRADIENT_CLIP_NORM)

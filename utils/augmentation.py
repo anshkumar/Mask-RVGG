@@ -1903,7 +1903,7 @@ def random_augmentation(images, bboxes, masks, output_size, classes):
     a_bboxes = tf.stack([a_bboxes[:, 0]*output_size[0]/img_h, a_bboxes[:, 1]*output_size[1]/img_w, a_bboxes[:,2]*output_size[0]/img_h, a_bboxes[:,3]*output_size[1]/img_w], axis=1)
     _h = a_bboxes[:, 2] - a_bboxes[:, 0]
     _w = a_bboxes[:, 3] - a_bboxes[:, 1]
-    keep = tf.where( tf.math.logical_and (_h > 8/output_size[0], _w > 8/output_size[1]))
+    keep = tf.where( tf.math.logical_and (_h > 4/output_size[0], _w > 4/output_size[1]))
     a_bboxes = tf.gather_nd(a_bboxes, keep)
     a_masks = tf.gather_nd(a_masks, keep)
     a_classes = tf.gather_nd(a_classes, keep)

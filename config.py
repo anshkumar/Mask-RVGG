@@ -28,11 +28,11 @@ class Config(object):
     ANCHOR_RATIOS =  [ [[1, 1/2, 2]] ]*5
 
     # Length of square anchor side in pixels
+    # ANCHOR_SCALES = [list(i*np.array([2 ** 0, 2 ** (1. / 3.), 2 ** (2. / 3.)])) for i in [16, 32, 64, 128, 256]]
     ANCHOR_SCALES = [[24.0, 30.238105197476955, 38.097625247236785], [48.0, 60.47621039495391, 76.19525049447357], [96.0, 120.95242078990782, 152.39050098894714], [192.0, 241.90484157981564, 304.7810019778943], [384.0, 483.8096831596313, 609.5620039557886]]
 
-
     FPN_FEATURE_MAP_SIZE = 256
-    ###########################################################################
+
     # [64, 88, 112, 160, 224, 288, 384]
     W_BIFPN = 64
 
@@ -49,7 +49,6 @@ class Config(object):
     SEPARABLE_CONV = True
 
     DETECT_QUADRANGLE = False
-    ###########################################################################
 
     # Number of classification classes (excluding background)
     NUM_CLASSES = 90  # Override in sub-classes
@@ -82,14 +81,14 @@ class Config(object):
     # Loss weights for more precise optimization.
     LOSS_WEIGHTS = {
         "loss_weight_cls": 1.,
-        "loss_weight_box": 1.5,
+        "loss_weight_box": 1.,
         "loss_weight_mask": 1.,
         "loss_weight_mask_iou": 1.,
     }
 
     # Allowed are : ['OHEM', 'FOCAL', 'CROSSENTROPY']
     LOSS_CLASSIFICATION = 'OHEM'
-
+    ACTIVATION = 'SOFTMAX' # ['SOFTMAX', 'SIGMOID']
     NEG_POS_RATIO = 3
     USE_MASK_IOU = False
 
@@ -98,20 +97,20 @@ class Config(object):
     # weights to explode. Likely due to differences in optimizer
     # implementation.
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW', 'AdaBelief']
-    OPTIMIZER = 'Adam'
-    LEARNING_RATE = 6e-4
-    N_WARMUP_STEPS = 500
-    WARMUP_LR = 1e-4
+    OPTIMIZER = 'SGD'
+    LEARNING_RATE = 0.04 #4e-3
+    N_WARMUP_STEPS = 1000
+    WARMUP_LR = 0.0
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
-    TRAIN_ITER = 800000
-    LR_TOTAL_STEPS = 800000
+    TRAIN_ITER = 406670
+    LR_TOTAL_STEPS = 406670
 
     # Weight decay regularization
-    WEIGHT_DECAY = 5*1e-4
+    WEIGHT_DECAY = 1e-4 #5*1e-4
 
     # Gradient norm clipping or AGC (Will use either one of them.)
-    GRADIENT_CLIP_NORM = 10.0
+    GRADIENT_CLIP_NORM = None
     USE_AGC = False
 
     MATCH_THRESHOLD = 0.5
