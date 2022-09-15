@@ -11,7 +11,7 @@ from absl import flags
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_string('eval_dir', './coco/test',
+flags.DEFINE_string('eval_dir', './coco/test2017',
                     'directory of testing images')
 flags.DEFINE_string('img_info', './coco/annotations/image_info_test-dev2017.json',
                     'Image info file.')
@@ -19,7 +19,7 @@ flags.DEFINE_string('out_dir', './out',
                     'Output image dir.')
 flags.DEFINE_string('label_map', './label_map.pbtxt',
                     'path to label_map.pbtxt')
-flags.DEFINE_string('output_json', './detections_test-dev2017_yolact_results.json',
+flags.DEFINE_string('output_json', './detections_test-dev2017_masked_results.json',
                     'json_output_path to save in the format used by MS COCO')
 flags.DEFINE_string('saved_model_dir', None,
                     'saved_model directory containg inference model')
@@ -111,7 +111,7 @@ def main(argv):
     for _info in info["images"]:
             img = _info["file_name"]
             image_org = cv2.imread(os.path.join(FLAGS.eval_dir, img))
-            image = cv2.resize(image_org, (550, 550))
+            image = cv2.resize(image_org, (512, 512))
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = image.astype(np.float32)
             output = infer(tf.constant(image[None, ...]))
@@ -122,7 +122,7 @@ def main(argv):
             det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.05)
             det_boxes = output['detection_boxes'][0][:det_num]
             det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
-            det_masks = output['detection_masks'][0][:det_num].numpy()
+            # det_masks = output['detection_masks'][0][:det_num].numpy()
 
             det_scores = output['detection_scores'][0][:det_num].numpy()
             det_classes = output['detection_classes'][0][:det_num].numpy()
@@ -137,17 +137,17 @@ def main(argv):
                 _class = int(det_classes[i])
 
                 rle_mask = None
-                _m = det_masks[i][:, :, _class-1]
-                if boxW > 0 and boxH > 0:
-                  _m = cv2.resize(_m, (boxW, boxH))
-                  mask = np.array(_m > 0.5, dtype=np.bool, order='F')
-                  rle_mask = m.encode(mask)
-                  rle_mask['counts'] = rle_mask['counts'].decode('ascii')
+                # _m = det_masks[i][:, :, _class-1]
+                # if boxW > 0 and boxH > 0:
+                #   _m = cv2.resize(_m, (boxW, boxH))
+                #   mask = np.array(_m > 0.5, dtype=np.bool, order='F')
+                #   rle_mask = m.encode(mask)
+                #   rle_mask['counts'] = rle_mask['counts'].decode('ascii')
 
-                  mask = (_m > 0.5)
-                  roi = image_org[_y1:_y2, _x1:_x2][mask]
-                  blended = roi.astype("uint8")
-                  image_org[_y1:_y2, _x1:_x2][mask] = blended*[0,0,1]
+                #   mask = (_m > 0.5)
+                #   roi = image_org[_y1:_y2, _x1:_x2][mask]
+                #   blended = roi.astype("uint8")
+                #   image_org[_y1:_y2, _x1:_x2][mask] = blended*[0,0,1]
 
                 cv2.rectangle(image_org, (_x1, _y1), (_x2, _y2), (0, 255, 0), 2)
                 cv2.putText(image_org, str(_class)+'; '+str(round(det_scores[i],2)), (_x1, _y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), lineType=cv2.LINE_AA)
@@ -155,7 +155,8 @@ def main(argv):
                 annotations_lst.append({
                     "image_id": _info["id"],
                     "category_id": _class,
-                    "segmentation": rle_mask,
+                    "bbox": [_x1,_y1,_x2-_x1,_y2-_y1],
+                    # "segmentation": rle_mask,
                     "score": float(det_scores[i])
                     })
             cv2.imwrite(os.path.join(FLAGS.out_dir, _info["file_name"]), image_org)

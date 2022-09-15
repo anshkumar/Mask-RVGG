@@ -68,6 +68,14 @@ class Parser(object):
         masks = tf.expand_dims(masks, axis=-1)
         masks = tf.image.resize(masks, 
             [self._output_size_h, self._output_size_w])
+        masks = tf.image.resize(masks, 
+            [self._output_size_h, self._output_size_w])
+
+        # masks = tf.image.crop_and_resize(masks, 
+        #     boxes=boxes,
+        #     box_indices=tf.range(tf.shape(boxes)[0]),
+        #     crop_size=self.config.MASK_SHAPE)
+
         masks = tf.squeeze(masks)
         masks = tf.cast(masks + 0.5, tf.uint8)
         masks = tf.cast(masks, tf.float32)

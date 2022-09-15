@@ -11,9 +11,10 @@ class Config(object):
     that need to be changed.
     """
     # Backbone network architecture
-    # Supported values are: efficientnetb0, efficientnetb1, efficientnetb2,
-    #         efficientnetb3, efficientnetb4, efficientnetb5, efficientnetb6
-    #		  efficientnetv2s, efficientnetv2m, efficientnetv2l
+    # Supported values are: efficientnetv2b0, efficientnetv2b1, efficientnetv2b2,
+    #         efficientnetv2b3, efficientnetv2b4, efficientnetv2b5, efficientnetv2b6
+    #		  efficientnetv2s, efficientnetv2m, efficientnetv2l,
+    #         resnet50
     BACKBONE = "efficientnetv2b0"
     BASE_MODEL_TRAINABLE = True
     FREEZE_BACKBONE_BN = True
@@ -31,8 +32,11 @@ class Config(object):
     # ANCHOR_SCALES = [list(i*np.array([2 ** 0, 2 ** (1. / 3.), 2 ** (2. / 3.)])) for i in [16, 32, 64, 128, 256]]
     ANCHOR_SCALES = [[24.0, 30.238105197476955, 38.097625247236785], [48.0, 60.47621039495391, 76.19525049447357], [96.0, 120.95242078990782, 152.39050098894714], [192.0, 241.90484157981564, 304.7810019778943], [384.0, 483.8096831596313, 609.5620039557886]]
 
+    # Weather to use FPN or BiFPN
+    USE_FPN = False
     FPN_FEATURE_MAP_SIZE = 256
 
+    # BiFPN settings
     # [64, 88, 112, 160, 224, 288, 384]
     W_BIFPN = 64
 
@@ -64,7 +68,7 @@ class Config(object):
     # Size of the top-down layers used to build the feature pyramid
     TOP_DOWN_PYRAMID_SIZE = 256
 
-    PREDICT_MASK = False
+    PREDICT_MASK = True
     # Pooled ROIs
     MASK_POOL_SIZE = 7
 
@@ -76,7 +80,7 @@ class Config(object):
     #     None: Train BN layers. This is the normal mode
     #     False: Freeze BN layers. Good when using a small batch size
     #     True: (don't use). Set layer in training mode even when predicting
-    TRAIN_BN = True 
+    # TRAIN_BN = True 
 
     # Loss weights for more precise optimization.
     LOSS_WEIGHTS = {
@@ -98,19 +102,19 @@ class Config(object):
     # implementation.
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW', 'AdaBelief']
     OPTIMIZER = 'SGD'
-    LEARNING_RATE = 0.04 #4e-3
+    LEARNING_RATE = 4e-2
     N_WARMUP_STEPS = 1000
     WARMUP_LR = 0.0
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
-    TRAIN_ITER = 406670
-    LR_TOTAL_STEPS = 406670
+    TRAIN_ITER = 44358
+    LR_TOTAL_STEPS = 44358
 
     # Weight decay regularization
-    WEIGHT_DECAY = 1e-4 #5*1e-4
+    WEIGHT_DECAY = 1e-4 # 5*1e-4
 
     # Gradient norm clipping or AGC (Will use either one of them.)
-    GRADIENT_CLIP_NORM = None
+    GRADIENT_CLIP_NORM = 10
     USE_AGC = False
 
     MATCH_THRESHOLD = 0.5

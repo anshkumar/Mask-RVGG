@@ -42,7 +42,6 @@ class Detect(object):
 
         box_p = net_outs['regression']
         class_p = net_outs['classification']
-        boxes_feature_level = net_outs['boxes_feature_level']
         anchors = net_outs['priors']  # [cx, cy, w, h] format. Normalized.
 
         num_class = tf.shape(class_p)[2] - 1
@@ -65,7 +64,6 @@ class Detect(object):
         for b in range(batch_size):
             # filter predicted boxes according the class score
             class_thre = tf.boolean_mask(class_p[b], class_p_max[b] > self.conf_thresh)
-            boxes_fl_thre = tf.boolean_mask(boxes_feature_level[b], class_p_max[b] > self.conf_thresh)
             raw_boxes = tf.boolean_mask(box_p[b], class_p_max[b] > self.conf_thresh)
             raw_anchors = tf.boolean_mask(anchors, class_p_max[b] > self.conf_thresh)
 
