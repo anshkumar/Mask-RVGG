@@ -67,5 +67,6 @@ class PredictionModule(tf.keras.layers.Layer):
         # reshape the prediction head result for following loss calculation
         pred_class = tf.reshape(pred_class, [tf.shape(pred_class)[0], -1, self.num_class])
         pred_box = tf.reshape(pred_box, [tf.shape(pred_box)[0], -1, 4])
-
+        pred_class = tf.nn.softmax(pred_class, axis=-1)
+        
         return pred_class, pred_box 

@@ -186,6 +186,35 @@ class Loss(object):
         return [loss_conf*self._loss_weight_cls]
 
     def _loss_mask(self, use_cropped_mask=True):
+        '''
+        p_mask = tf.reshape(self.pred_mask, (-1, tf.shape(self.pred_mask)[2], tf.shape(self.pred_mask)[3], tf.shape(self.pred_mask)[4]))
+        gt_mask = tf.reshape(self.masks, (-1, tf.shape(self.masks)[2], tf.shape(self.masks)[3]))
+        # p_mask = tf.gather_nd(p_mask, iou_max_id)
+        # gt_mask = tf.gather_nd(gt_mask, iou_max_id)
+        classes = tf.reshape(self.classes, [-1])
+        class_gt_id = tf.where(classes > 0)
+
+        pos_p_masks = tf.gather_nd(p_mask, class_gt_id)
+        pos_gt_masks = tf.gather_nd(gt_mask, class_gt_id)
+
+        # Gathering positive mask from ground truth
+        pos_classes = tf.gather_nd(classes, class_gt_id)
+        pos_p_masks = tf.transpose(pos_p_masks, (3,0,1,2))
+        _idx = tf.stack((pos_classes, tf.range(tf.shape(pos_classes)[0], dtype=tf.int64)),axis=1)
+        pos_p_masks = tf.gather_nd(pos_p_masks, _idx)
+
+        #Resizing to the input size
+        pos_p_masks = tf.expand_dims(pos_p_masks, axis=-1)
+        pos_p_masks = tf.image.resize(pos_p_masks, [self.config.MASK_SHAPE[0], self.config.MASK_SHAPE[1]], method=tf.image.ResizeMethod.BILINEAR)
+        pos_p_masks = pos_p_masks[:, :, :, 0]
+
+        cce = tf.keras.losses.BinaryCrossentropy(from_logits=False,
+            reduction=tf.keras.losses.Reduction.NONE)
+        loss = cce(pos_gt_masks, pos_p_masks)
+
+        return [tf.reduce_mean(loss)*self._loss_weight_mask], [0.0]
+
+        '''
         pred_bbox = tf.reshape(self.pred_bbox, (-1, 4))
         gt_bbox = tf.reshape(self.gt_bbox, (-1,4))
         iou = utils._iou(pred_bbox, gt_bbox)
@@ -232,7 +261,7 @@ class Loss(object):
 
             loss = tf.keras.backend.binary_crossentropy(pos_gt_masks, pos_p_masks, from_logits=False)
 
-            return [tf.reduce_mean(loss)], [0.0]
+            return [tf.reduce_mean(loss)*self._loss_weight_mask], [0.0]
 
         '''
         # Mask IOU loss

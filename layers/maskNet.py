@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers
 import math
+import tensorflow_addons as tfa
 
 def log2_graph(x):
     """Implementation of Log2. TF doesn't have a native implementation."""
@@ -23,6 +24,17 @@ class BatchNorm(keras.layers.BatchNormalization):
             True: (don't use). Set layer in training mode even when making inferences
         """
         return super(self.__class__, self).call(inputs, training=training)
+
+class WeightStandardizedConv2D(layers.Conv2D):
+    def convolution_op(self, inputs, kernel):
+        mean, var = tf.nn.moments(kernel, axes=[0, 1, 2], keepdims=True)
+        return tf.nn.conv2d(
+            inputs,
+            (kernel - mean) / tf.sqrt(var + 1e-10),
+            padding="SAME",
+            strides=list(self.strides),
+            name=self.__class__.__name__,
+        )
 
 class PyramidROIAlign(keras.layers.Layer):
     """Implements ROI Pooling on multiple levels of the feature pyramid.
@@ -199,8 +211,7 @@ class MaskHead(keras.layers.Layer):
         self.final_conv = layers.TimeDistributed(layers.Conv2D(config.NUM_CLASSES, (1, 1), strides=1, activation="sigmoid"),
                            name="mrcnn_mask")
 
-    def call(self, rois, feature_maps,
-        num_classes, config):
+    def call(self, rois, feature_maps, num_classes, config, training):
         """Builds the computation graph of the mask head of Feature Pyramid Network.
 
         rois: [batch, num_rois, (y1, x1, y2, x2)] Proposal boxes in normalized
@@ -219,25 +230,25 @@ class MaskHead(keras.layers.Layer):
 
         # Conv layers
         x = self.conv_1(x)
-        x = self.batch_norm_1(x, training=config.TRAIN_BN)
+        x = self.batch_norm_1(x, training=training)
         x = self.act_1(x)
 
         x = self.conv_2(x)
-        x = self.batch_norm_2(x, training=config.TRAIN_BN)
+        x = self.batch_norm_2(x, training=training)
         x = self.act_2(x)
 
         x = self.conv_3(x)
-        x = self.batch_norm_3(x, training=config.TRAIN_BN)
+        x = self.batch_norm_3(x, training=training)
         x = self.act_3(x)
 
         x = self.conv_4(x)
-        x = self.batch_norm_4(x, training=config.TRAIN_BN)
+        x = self.batch_norm_4(x, training=training)
         x = self.act_4(x)
 
         x = self.deconv(x)
 
         if self.use_bigger_mask:
-            x = self.extra_layers(x, training=config.TRAIN_BN)
+            x = self.extra_layers(x, training=training)
 
         x = self.final_conv(x)
         return x
