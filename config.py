@@ -19,7 +19,7 @@ class Config(object):
     BASE_MODEL_TRAINABLE = True
     FREEZE_BACKBONE_BN = True
 
-    BATCH_SIZE = 32 # Batch size per GPU
+    BATCH_SIZE = 16 # Batch size per GPU
     # (Height, Width, Channels)
     # [512, 640, 768, 896, 1024, 1280, 1408]
     IMAGE_SHAPE = [512, 512, 3]
@@ -59,7 +59,7 @@ class Config(object):
 
     MAX_OUTPUT_SIZE = 100
     PER_CLASS_MAX_OUTPUT_SIZE = 100
-    CONF_THRESH = 0.01
+    CONF_THRESH = 0.05
     NMS_THRESH = 0.5
 
     # Maximum number of ground truth instances to use in one image
@@ -102,13 +102,13 @@ class Config(object):
     # implementation.
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW', 'AdaBelief']
     OPTIMIZER = 'SGD'
-    LEARNING_RATE = 4e-2
+    LEARNING_RATE = 1e-2
     N_WARMUP_STEPS = 1000
     WARMUP_LR = 0.0
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
-    TRAIN_ITER = 44358
-    LR_TOTAL_STEPS = 44358
+    TRAIN_ITER = 88716
+    LR_TOTAL_STEPS = 88716
 
     # Weight decay regularization
     WEIGHT_DECAY = 1e-4 # 5*1e-4
