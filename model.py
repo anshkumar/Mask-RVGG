@@ -122,7 +122,7 @@ class MaskED(tf.keras.Model):
         self.config = config
 
     @tf.function
-    def call(self, inputs, training=False):
+    def call(self, inputs, gt_boxes=None, training=False):
         inputs = tf.cast(inputs, tf.float32)
         #image_norm = tf.keras.layers.Normalization(mean=[0.485, 0.456, 0.406], variance=[np.square(0.299), np.square(0.224), np.square(0.225)])
         #features = self.backbone(image_norm(inputs/255), training=True)
@@ -159,11 +159,18 @@ class MaskED(tf.keras.Model):
         pred.update(self.detect(pred, img_shape=tf.shape(inputs)))
 
         if self.config.PREDICT_MASK:
-            masks = self.mask_head(pred['detection_boxes'],
-                            features[:-2],
-                            self.num_classes,
-                            self.config,
-                            training)
+            if training:
+                masks = self.mask_head(gt_boxes,
+                                features[:-2],
+                                self.num_classes,
+                                self.config,
+                                training)
+            else:
+                masks = self.mask_head(pred['detection_boxes'],
+                                features[:-2],
+                                self.num_classes,
+                                self.config,
+                                training)
             pred.update({'detection_masks': masks})
 
         return pred
