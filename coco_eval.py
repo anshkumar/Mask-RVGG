@@ -115,7 +115,7 @@ def main(argv):
             image = cv2.resize(image_org, (512, 512))
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = image.astype(np.float32)
-            output = infer(tf.constant(image[None, ...]))
+            output = infer([tf.constant(image[None, ...]), None])
 
             _h = image_org.shape[0]
             _w = image_org.shape[1]
