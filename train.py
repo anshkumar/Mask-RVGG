@@ -305,7 +305,7 @@ def main(argv):
       config,
       tfrecord_dir=FLAGS.tfrecord_val_dir,
       feature_map_size=model.feature_map_size,
-      batch_size=config.BATCH_SIZE,
+      batch_size=1,
       subset='val')
 
     criterion = loss.Loss(config)
@@ -379,7 +379,7 @@ def main(argv):
                       'arithmetic_optimization': True,
                       'remapping': True}):
             with tf.GradientTape() as tape:
-                output = model(image, gt_boxes=labels['boxes_norm'], training=True)
+                output = model([image, labels['boxes_norm']], training=True)
 
                 loc_loss, conf_loss, mask_loss, mask_iou_loss, \
                     = criterion(model, output, labels, config.NUM_CLASSES+1, image)
@@ -477,7 +477,7 @@ def main(argv):
                 if valid_iter > FLAGS.valid_iter:
                     break
                 # calculate validation loss
-                output = model(valid_image, training=False)
+                output = model([valid_image, None], training=False)
 
                 valid_loc_loss, valid_conf_loss, valid_mask_loss, \
                 valid_mask_iou_loss = \
@@ -489,81 +489,80 @@ def main(argv):
                 _h = valid_image.shape[1]
                 _w = valid_image.shape[2]
                 
-                for b in range(config.BATCH_SIZE):
-                    image_id = int(time.time()*1000000)
-                    gt_num_box = valid_labels['num_obj'][b].numpy()
-                    gt_boxes = valid_labels['boxes_norm'][b][:gt_num_box]
-                    gt_boxes = gt_boxes.numpy()*np.array([_h,_w,_h,_w])
-                    gt_classes = valid_labels['classes'][b][:gt_num_box].numpy()
+                image_id = int(time.time()*1000000)
+                gt_num_box = valid_labels['num_obj'][0].numpy()
+                gt_boxes = valid_labels['boxes_norm'][0][:gt_num_box]
+                gt_boxes = gt_boxes.numpy()*np.array([_h,_w,_h,_w])
+                gt_classes = valid_labels['classes'][0][:gt_num_box].numpy()
 
-                    if config.PREDICT_MASK:
-                      gt_masks = valid_labels['mask_target'][b][:gt_num_box].numpy()
+                if config.PREDICT_MASK:
+                  gt_masks = valid_labels['mask_target'][0][:gt_num_box].numpy()
 
-                      # gt_masked_image = np.zeros((gt_num_box, _h, _w), dtype=np.uint8)
-                      # for _b in range(gt_num_box):
-                      #     box = gt_boxes[_b]
-                      #     box = np.round(box).astype(int)
-                      #     (startY, startX, endY, endX) = box.astype("int")
-                      #     boxW = endX - startX
-                      #     boxH = endY - startY
-                      #     if boxW > 0 and boxH > 0:
-                      #       _m = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
-                      #       gt_masked_image[_b][startY:endY, startX:endX] = _m
+                  # gt_masked_image = np.zeros((gt_num_box, _h, _w), dtype=np.uint8)
+                  # for _b in range(gt_num_box):
+                  #     box = gt_boxes[_b]
+                  #     box = np.round(box).astype(int)
+                  #     (startY, startX, endY, endX) = box.astype("int")
+                  #     boxW = endX - startX
+                  #     boxH = endY - startY
+                  #     if boxW > 0 and boxH > 0:
+                  #       _m = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
+                  #       gt_masked_image[_b][startY:endY, startX:endX] = _m
 
-                      coco_evaluator.add_single_ground_truth_image_info(
-                          image_id='image'+str(image_id),
-                          groundtruth_dict={
-                            standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
-                            standard_fields.InputDataFields.groundtruth_classes: gt_classes,
-                            standard_fields.InputDataFields.groundtruth_instance_masks: gt_masks
-                          })
-                    else:
-                      coco_evaluator.add_single_ground_truth_image_info(
-                          image_id='image'+str(image_id),
-                          groundtruth_dict={
-                            standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
-                            standard_fields.InputDataFields.groundtruth_classes: gt_classes,
-                          })
+                  coco_evaluator.add_single_ground_truth_image_info(
+                      image_id='image'+str(image_id),
+                      groundtruth_dict={
+                        standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
+                        standard_fields.InputDataFields.groundtruth_classes: gt_classes,
+                        standard_fields.InputDataFields.groundtruth_instance_masks: gt_masks
+                      })
+                else:
+                  coco_evaluator.add_single_ground_truth_image_info(
+                      image_id='image'+str(image_id),
+                      groundtruth_dict={
+                        standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
+                        standard_fields.InputDataFields.groundtruth_classes: gt_classes,
+                      })
 
-                    det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.15)
+                det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.5)
 
-                    det_boxes = output['detection_boxes'][b][:det_num]
-                    det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
-                    det_scores = output['detection_scores'][b][:det_num].numpy()
-                    det_classes = output['detection_classes'][b][:det_num].numpy().astype(int)
+                det_boxes = output['detection_boxes'][0][:det_num]
+                det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
+                det_scores = output['detection_scores'][0][:det_num].numpy()
+                det_classes = output['detection_classes'][0][:det_num].numpy().astype(int)
 
-                    if config.PREDICT_MASK:
-                      det_masks = output['detection_masks'][b][:det_num].numpy()
-                      det_masks = (det_masks > 0.5).astype("uint8")
-                      det_masked_image = np.zeros((det_num, _h, _w), dtype=np.uint8)
-                      for _b in range(det_num):
-                          box = det_boxes[_b]
-                          _c = det_classes[_b] - 1
-                          _m = det_masks[_b][:, :, _c]
-                          box = np.round(box).astype(int)
-                          (startY, startX, endY, endX) = box.astype("int")
-                          boxW = endX - startX
-                          boxH = endY - startY
-                          if boxW > 0 and boxH > 0:
-                            _m = cv2.resize(_m, (boxW, boxH))
-                            det_masked_image[_b][startY:endY, startX:endX] = _m
-                      
-                      coco_evaluator.add_single_detected_image_info(
-                          image_id='image'+str(image_id),
-                          detections_dict={
-                              standard_fields.DetectionResultFields.detection_boxes: det_boxes,
-                              standard_fields.DetectionResultFields.detection_scores: det_scores,
-                              standard_fields.DetectionResultFields.detection_classes: det_classes,
-                              standard_fields.DetectionResultFields.detection_masks: det_masked_image
-                          })
-                    else:
-                      coco_evaluator.add_single_detected_image_info(
-                          image_id='image'+str(image_id),
-                          detections_dict={
-                              standard_fields.DetectionResultFields.detection_boxes: det_boxes,
-                              standard_fields.DetectionResultFields.detection_scores: det_scores,
-                              standard_fields.DetectionResultFields.detection_classes: det_classes,
-                          })
+                if config.PREDICT_MASK:
+                  det_masks = output['detection_masks'][0][:det_num].numpy()
+                  det_masks = (det_masks > 0.5).astype("uint8")
+                  det_masked_image = np.zeros((det_num, _h, _w), dtype=np.uint8)
+                  for _b in range(det_num):
+                      box = det_boxes[_b]
+                      _c = det_classes[_b] - 1
+                      _m = det_masks[_b][:, :, _c]
+                      box = np.round(box).astype(int)
+                      (startY, startX, endY, endX) = box.astype("int")
+                      boxW = endX - startX
+                      boxH = endY - startY
+                      if boxW > 0 and boxH > 0:
+                        _m = cv2.resize(_m, (boxW, boxH))
+                        det_masked_image[_b][startY:endY, startX:endX] = _m
+                  
+                  coco_evaluator.add_single_detected_image_info(
+                      image_id='image'+str(image_id),
+                      detections_dict={
+                          standard_fields.DetectionResultFields.detection_boxes: det_boxes,
+                          standard_fields.DetectionResultFields.detection_scores: det_scores,
+                          standard_fields.DetectionResultFields.detection_classes: det_classes,
+                          standard_fields.DetectionResultFields.detection_masks: det_masked_image
+                      })
+                else:
+                  coco_evaluator.add_single_detected_image_info(
+                      image_id='image'+str(image_id),
+                      detections_dict={
+                          standard_fields.DetectionResultFields.detection_boxes: det_boxes,
+                          standard_fields.DetectionResultFields.detection_scores: det_scores,
+                          standard_fields.DetectionResultFields.detection_classes: det_classes,
+                      })
 
                 v_loc.update_state(valid_loc_loss)
                 v_conf.update_state(valid_conf_loss)

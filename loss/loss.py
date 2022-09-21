@@ -222,7 +222,6 @@ class Loss(object):
         cce = tf.keras.losses.BinaryCrossentropy(from_logits=False,
             reduction=tf.keras.losses.Reduction.NONE)
         loss = cce(pos_gt_masks, pos_p_masks)
-
         return [tf.reduce_mean(loss)*self._loss_weight_mask], [0.0]
 
         '''

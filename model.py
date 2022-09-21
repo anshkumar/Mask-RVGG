@@ -121,8 +121,9 @@ class MaskED(tf.keras.Model):
         self.num_classes = config.NUM_CLASSES
         self.config = config
 
-    @tf.function
-    def call(self, inputs, gt_boxes=None, training=False):
+    @tf.function()
+    def call(self, inputs, training=False):
+        inputs, gt_boxes = inputs[0], inputs[1]
         inputs = tf.cast(inputs, tf.float32)
         #image_norm = tf.keras.layers.Normalization(mean=[0.485, 0.456, 0.406], variance=[np.square(0.299), np.square(0.224), np.square(0.225)])
         #features = self.backbone(image_norm(inputs/255), training=True)

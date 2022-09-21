@@ -59,7 +59,7 @@ class Config(object):
 
     MAX_OUTPUT_SIZE = 100
     PER_CLASS_MAX_OUTPUT_SIZE = 100
-    CONF_THRESH = 0.05
+    CONF_THRESH = 0.5
     NMS_THRESH = 0.5
 
     # Maximum number of ground truth instances to use in one image
