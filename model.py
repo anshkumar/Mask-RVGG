@@ -160,7 +160,7 @@ class MaskED(tf.keras.Model):
         pred.update(self.detect(pred, img_shape=tf.shape(inputs)))
 
         if self.config.PREDICT_MASK:
-            if training:
+            if gt_boxes is not None:
                 masks = self.mask_head(gt_boxes,
                                 features[:-2],
                                 self.num_classes,

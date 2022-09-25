@@ -230,25 +230,25 @@ class MaskHead(keras.layers.Layer):
 
         # Conv layers
         x = self.conv_1(x)
-        x = self.batch_norm_1(x, training=training)
+        x = self.batch_norm_1(x)
         x = self.act_1(x)
 
         x = self.conv_2(x)
-        x = self.batch_norm_2(x, training=training)
+        x = self.batch_norm_2(x)
         x = self.act_2(x)
 
         x = self.conv_3(x)
-        x = self.batch_norm_3(x, training=training)
+        x = self.batch_norm_3(x)
         x = self.act_3(x)
 
         x = self.conv_4(x)
-        x = self.batch_norm_4(x, training=training)
+        x = self.batch_norm_4(x)
         x = self.act_4(x)
 
         x = self.deconv(x)
 
         if self.use_bigger_mask:
-            x = self.extra_layers(x, training=training)
+            x = self.extra_layers(x)
 
         x = self.final_conv(x)
         return x
