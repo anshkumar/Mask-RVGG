@@ -59,7 +59,7 @@ class Config(object):
 
     MAX_OUTPUT_SIZE = 100
     PER_CLASS_MAX_OUTPUT_SIZE = 100
-    CONF_THRESH = 0.5
+    CONF_THRESH = 0.05
     NMS_THRESH = 0.5
 
     # Maximum number of ground truth instances to use in one image
@@ -102,7 +102,7 @@ class Config(object):
     # implementation.
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW', 'AdaBelief']
     OPTIMIZER = 'SGD'
-    LEARNING_RATE = 1e-2
+    LEARNING_RATE = 4e-2
     N_WARMUP_STEPS = 1000
     WARMUP_LR = 0.0
     LEARNING_MOMENTUM = 0.9

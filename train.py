@@ -27,10 +27,10 @@ import time
 from tqdm import tqdm
 
 tf.random.set_seed(123)
+
 physical_devices = tf.config.list_physical_devices('GPU')
 try:
-        tf.config.experimental.set_virtual_device_configuration(physical_devices[0], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=19240)])
-        tf.config.experimental.set_virtual_device_configuration(physical_devices[1], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=19240)])
+        tf.config.experimental.set_memory_growth(physical_devices[0], True)
 except:
         print("Invalid device or cannot modify virtual devices once initialized.")
         pass
@@ -167,126 +167,118 @@ def main(argv):
         finally:
             tf.config.optimizer.set_experimental_options(old_opts)
 
+    config = Config()
+    config.display()
+    model = MaskED(config)
 
-    mirrored_strategy = tf.distribute.MirroredStrategy()    
+    # -----------------------------------------------------------------
+    # Choose the Optimizor, Loss Function, and Metrics, learning rate schedule 
 
-    with mirrored_strategy.scope():
-        config = Config()
-        config.display()
-        model = MaskED(config)
-
-        # -----------------------------------------------------------------
-        # Choose the Optimizor, Loss Function, and Metrics, learning rate schedule 
-
-        # add weight decay
-        # Skip gamma and beta weights of batch normalization layers.
-        def add_weight_decay(model, weight_decay):
-            # https://github.com/keras-team/keras/issues/12053
-            if (weight_decay is None) or (weight_decay == 0.0):
-                return
-
-            # recursion inside the model
-            def add_decay_loss(m, factor):
-                if isinstance(m, tf.keras.Model):
-                    for layer in m.layers:
-                        add_decay_loss(layer, factor)
-                else:
-                    for param in m.trainable_weights:
-                      # if 'gamma' not in param.name and 'beta' not in param.name:
-                        with tf.keras.backend.name_scope('weight_regularizer'):
-                            regularizer = lambda: tf.keras.regularizers.l2(factor)(param)
-                            m.add_loss(regularizer)
-
-            # weight decay and l2 regularization differs by a factor of 2
-            # because the weights are updated as w := w - l_r * L(w,x) - 2 * l_r * l2 * w
-            # where L-r is learning rate, l2 is L2 regularization factor. The whole (2 * l2)
-            # forms a weight decay factor. So, in pytorch where weight decay is directly given
-            # and in tf where l2 regularization has to be used differs by a factor of 2.
-            add_decay_loss(model, weight_decay/2.0)
+    # add weight decay
+    # Skip gamma and beta weights of batch normalization layers.
+    def add_weight_decay(model, weight_decay):
+        # https://github.com/keras-team/keras/issues/12053
+        if (weight_decay is None) or (weight_decay == 0.0):
             return
 
-        add_weight_decay(model, config.WEIGHT_DECAY)   
-
-        logging.info("Initiate the Optimizer and Loss function...")
-        if config.OPTIMIZER == 'SGD':
-          logging.info("Using SGD optimizer")
-          #lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
-          #   [config.N_WARMUP_STEPS, int(0.35*config.TRAIN_ITER), int(0.75*config.TRAIN_ITER), int(0.875*config.TRAIN_ITER), int(0.9375*config.TRAIN_ITER)], 
-          #   [config.WARMUP_LR, config.LEARNING_RATE, 0.1*config.LEARNING_RATE, 0.01*config.LEARNING_RATE, 0.001*config.LEARNING_RATE, 0.0001*config.LEARNING_RATE])
-          lr_schedule = learning_rate_schedule.LearningRateSchedule(
-            warmup_steps=config.N_WARMUP_STEPS, 
-            warmup_lr=config.WARMUP_LR,
-            initial_lr=config.LEARNING_RATE, 
-            total_steps=config.LR_TOTAL_STEPS)
-          if config.GRADIENT_CLIP_NORM is not None:
-            optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM, clipnorm=config.GRADIENT_CLIP_NORM, nesterov=True)
-          else:
-            optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM)
-        elif config.OPTIMIZER == 'Adam':
-          logging.info("Using Adam optimizer")
-          lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
-             [config.N_WARMUP_STEPS, int(0.35*config.TRAIN_ITER), int(0.75*config.TRAIN_ITER), int(0.875*config.TRAIN_ITER), int(0.9375*config.TRAIN_ITER)], 
-             [config.WARMUP_LR, config.LEARNING_RATE, 0.1*config.LEARNING_RATE, 0.01*config.LEARNING_RATE, 0.001*config.LEARNING_RATE, 0.0001*config.LEARNING_RATE])
-          # lr_schedule = learning_rate_schedule.LearningRateSchedule(
-          #   warmup_steps=config.N_WARMUP_STEPS, 
-          #   warmup_lr=config.WARMUP_LR,
-          #   initial_lr=config.LEARNING_RATE, 
-          #   total_steps=config.LR_TOTAL_STEPS)
-          if config.GRADIENT_CLIP_NORM is not None:
-            optimizer = tf.keras.optimizers.Adam(
-              learning_rate=lr_schedule, clipnorm=config.GRADIENT_CLIP_NORM)
-          else:
-            optimizer = tf.keras.optimizers.Adam(
-              learning_rate=lr_schedule)
-        elif config.OPTIMIZER == 'AdamW':
-          lr_schedule = learning_rate_schedule.LearningRateSchedule(
-            warmup_steps=config.N_WARMUP_STEPS, 
-            warmup_lr=config.WARMUP_LR,
-            initial_lr=config.LEARNING_RATE, 
-            total_steps=config.LR_TOTAL_STEPS)
-          if config.GRADIENT_CLIP_NORM is not None:
-            optimizer = tfa.optimizers.AdamW(
-              learning_rate=lr_schedule, 
-              weight_decay=FLAGS.weight_decay, clipnorm=config.GRADIENT_CLIP_NORM)
-          else:
-            optimizer = tfa.optimizers.AdamW(
-              learning_rate=lr_schedule,
-              weight_decay=FLAGS.weight_decay)
-        elif config.OPTIMIZER == 'AdaBelief':
-          optimizer = tfa.optimizers.AdaBelief(
-              lr=config.LEARNING_RATE,
-              total_steps=config.LR_TOTAL_STEPS,
-              warmup_proportion=config.N_WARMUP_STEPS/config.LR_TOTAL_STEPS,
-              min_lr=config.LEARNING_RATE*config.LEARNING_RATE,
-              rectify=True)
-
-        # setup checkpoints manager
-        checkpoint = tf.train.Checkpoint(
-          step=tf.Variable(1), optimizer=optimizer, model=model)
-        manager = tf.train.CheckpointManager(
-            checkpoint, directory=FLAGS.checkpoints_dir, max_to_keep=10
-        )
-        # restore from latest checkpoint and iteration
-        status = checkpoint.restore(manager.latest_checkpoint)
-
-        if manager.latest_checkpoint:
-            logging.info("Restored from {}".format(manager.latest_checkpoint))
-        else:
-            if FLAGS.pretrained_checkpoints != '':
-              feature_extractor_model = tf.train.Checkpoint(
-                backbone=model.backbone)
-              ckpt = tf.train.Checkpoint(model=feature_extractor_model)
-              ckpt.restore(FLAGS.pretrained_checkpoints).\
-                expect_partial().assert_existing_objects_matched()
-              logging.info("Backbone restored from {}".format(
-                FLAGS.pretrained_checkpoints))
+        # recursion inside the model
+        def add_decay_loss(m, factor):
+            if isinstance(m, tf.keras.Model):
+                for layer in m.layers:
+                    add_decay_loss(layer, factor)
             else:
-              logging.info("Initializing from scratch.")
+                for param in m.trainable_weights:
+                  # if 'gamma' not in param.name and 'beta' not in param.name:
+                    with tf.keras.backend.name_scope('weight_regularizer'):
+                        regularizer = lambda: tf.keras.regularizers.l2(factor)(param)
+                        m.add_loss(regularizer)
 
-    BATCH_SIZE_PER_REPLICA = config.BATCH_SIZE
-    global_batch_size = (BATCH_SIZE_PER_REPLICA *
-                     mirrored_strategy.num_replicas_in_sync)
-    
+        # weight decay and l2 regularization differs by a factor of 2
+        # because the weights are updated as w := w - l_r * L(w,x) - 2 * l_r * l2 * w
+        # where L-r is learning rate, l2 is L2 regularization factor. The whole (2 * l2)
+        # forms a weight decay factor. So, in pytorch where weight decay is directly given
+        # and in tf where l2 regularization has to be used differs by a factor of 2.
+        add_decay_loss(model, weight_decay/2.0)
+        return
+
+    add_weight_decay(model, config.WEIGHT_DECAY)   
+
+    logging.info("Initiate the Optimizer and Loss function...")
+    if config.OPTIMIZER == 'SGD':
+      logging.info("Using SGD optimizer")
+      #lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
+      #   [config.N_WARMUP_STEPS, int(0.35*config.TRAIN_ITER), int(0.75*config.TRAIN_ITER), int(0.875*config.TRAIN_ITER), int(0.9375*config.TRAIN_ITER)], 
+      #   [config.WARMUP_LR, config.LEARNING_RATE, 0.1*config.LEARNING_RATE, 0.01*config.LEARNING_RATE, 0.001*config.LEARNING_RATE, 0.0001*config.LEARNING_RATE])
+      lr_schedule = learning_rate_schedule.LearningRateSchedule(
+        warmup_steps=config.N_WARMUP_STEPS, 
+        warmup_lr=config.WARMUP_LR,
+        initial_lr=config.LEARNING_RATE, 
+        total_steps=config.LR_TOTAL_STEPS)
+      if config.GRADIENT_CLIP_NORM is not None:
+        optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM, clipnorm=config.GRADIENT_CLIP_NORM, nesterov=True)
+      else:
+        optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule, momentum=config.LEARNING_MOMENTUM)
+    elif config.OPTIMIZER == 'Adam':
+      logging.info("Using Adam optimizer")
+      lr_schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
+          [config.N_WARMUP_STEPS, int(0.35*config.TRAIN_ITER), int(0.75*config.TRAIN_ITER), int(0.875*config.TRAIN_ITER), int(0.9375*config.TRAIN_ITER)], 
+          [config.WARMUP_LR, config.LEARNING_RATE, 0.1*config.LEARNING_RATE, 0.01*config.LEARNING_RATE, 0.001*config.LEARNING_RATE, 0.0001*config.LEARNING_RATE])
+      # lr_schedule = learning_rate_schedule.LearningRateSchedule(
+      #   warmup_steps=config.N_WARMUP_STEPS, 
+      #   warmup_lr=config.WARMUP_LR,
+      #   initial_lr=config.LEARNING_RATE, 
+      #   total_steps=config.LR_TOTAL_STEPS)
+      if config.GRADIENT_CLIP_NORM is not None:
+        optimizer = tf.keras.optimizers.Adam(
+          learning_rate=lr_schedule, clipnorm=config.GRADIENT_CLIP_NORM)
+      else:
+        optimizer = tf.keras.optimizers.Adam(
+          learning_rate=lr_schedule)
+    elif config.OPTIMIZER == 'AdamW':
+      lr_schedule = learning_rate_schedule.LearningRateSchedule(
+        warmup_steps=config.N_WARMUP_STEPS, 
+        warmup_lr=config.WARMUP_LR,
+        initial_lr=config.LEARNING_RATE, 
+        total_steps=config.LR_TOTAL_STEPS)
+      if config.GRADIENT_CLIP_NORM is not None:
+        optimizer = tfa.optimizers.AdamW(
+          learning_rate=lr_schedule, 
+          weight_decay=FLAGS.weight_decay, clipnorm=config.GRADIENT_CLIP_NORM)
+      else:
+        optimizer = tfa.optimizers.AdamW(
+          learning_rate=lr_schedule,
+          weight_decay=FLAGS.weight_decay)
+    elif config.OPTIMIZER == 'AdaBelief':
+      optimizer = tfa.optimizers.AdaBelief(
+          lr=config.LEARNING_RATE,
+          total_steps=config.LR_TOTAL_STEPS,
+          warmup_proportion=config.N_WARMUP_STEPS/config.LR_TOTAL_STEPS,
+          min_lr=config.LEARNING_RATE*config.LEARNING_RATE,
+          rectify=True)
+
+    # setup checkpoints manager
+    checkpoint = tf.train.Checkpoint(
+      step=tf.Variable(1), optimizer=optimizer, model=model)
+    manager = tf.train.CheckpointManager(
+        checkpoint, directory=FLAGS.checkpoints_dir, max_to_keep=10
+    )
+    # restore from latest checkpoint and iteration
+    status = checkpoint.restore(manager.latest_checkpoint)
+
+    if manager.latest_checkpoint:
+        logging.info("Restored from {}".format(manager.latest_checkpoint))
+    else:
+        if FLAGS.pretrained_checkpoints != '':
+          feature_extractor_model = tf.train.Checkpoint(
+            backbone=model.backbone)
+          ckpt = tf.train.Checkpoint(model=feature_extractor_model)
+          ckpt.restore(FLAGS.pretrained_checkpoints).\
+            expect_partial().assert_existing_objects_matched()
+          logging.info("Backbone restored from {}".format(
+            FLAGS.pretrained_checkpoints))
+        else:
+          logging.info("Initializing from scratch.")
+
     # -----------------------------------------------------------------
     # Creating dataloaders for training and validation
     logging.info("Creating the training dataloader from: %s..." % \
@@ -295,9 +287,8 @@ def main(argv):
       config, 
       tfrecord_dir=FLAGS.tfrecord_train_dir,
       feature_map_size=model.feature_map_size,
-      batch_size=global_batch_size,
+      batch_size=config.BATCH_SIZE,
       subset='train')
-    train_dataset_dist = mirrored_strategy.experimental_distribute_dataset(train_dataset)
 
     logging.info("Creating the validation dataloader from: %s..." % \
       FLAGS.tfrecord_val_dir)
@@ -370,7 +361,14 @@ def main(argv):
     best_val = 1e10
     iterations = checkpoint.step.numpy()
 
-    def train_step(image, labels):
+    for image, labels in train_dataset:
+        # check iteration and change the learning rate
+        if iterations > config.TRAIN_ITER:
+            break
+
+        checkpoint.step.assign_add(1)
+        iterations += 1
+
         clip_factor=0.01
         eps=1e-3
         with options({'constant_folding': True,
@@ -383,39 +381,18 @@ def main(argv):
 
                 loc_loss, conf_loss, mask_loss, mask_iou_loss, \
                     = criterion(model, output, labels, config.NUM_CLASSES+1, image)
-
-                loc_loss = tf.nn.compute_average_loss(loc_loss, global_batch_size=mirrored_strategy.num_replicas_in_sync)
-                conf_loss = tf.nn.compute_average_loss(conf_loss, global_batch_size=mirrored_strategy.num_replicas_in_sync)
-                mask_loss = tf.nn.compute_average_loss(mask_loss, global_batch_size=mirrored_strategy.num_replicas_in_sync)
-                mask_iou_loss = tf.nn.compute_average_loss(mask_iou_loss, global_batch_size=mirrored_strategy.num_replicas_in_sync)
-    
-                total_loss = loc_loss + conf_loss + mask_loss + mask_iou_loss
+                        
+                total_loss = tf.reduce_sum(loc_loss + conf_loss + mask_loss + mask_iou_loss)
             grads = tape.gradient(total_loss, model.trainable_variables)
             if config.USE_AGC:
               agc_gradients = adaptive_clip_grad(model.trainable_variables, grads, 
                                                  clip_factor=clip_factor, eps=eps)
               optimizer.apply_gradients(zip(agc_gradients, model.trainable_variables))
-              return (loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, agc_gradients)
+              global_norm.update_state(tf.linalg.global_norm(agc_gradients))
+            else:
+              optimizer.apply_gradients(zip(grads, model.trainable_variables))
+              global_norm.update_state(tf.linalg.global_norm(grads))
 
-            optimizer.apply_gradients(zip(grads, model.trainable_variables))
-            return (loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads)
-
-    @tf.function
-    def distributed_train_step(image, labels):
-        per_replica_losses = mirrored_strategy.run(train_step, args=(image, labels,))
-        return mirrored_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
-                         axis=None)
-
-    for image, labels in train_dataset_dist:
-        # check iteration and change the learning rate
-        if iterations > config.TRAIN_ITER:
-            break
-
-        checkpoint.step.assign_add(1)
-        iterations += 1
-
-        loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads = distributed_train_step(image, labels)
-        global_norm.update_state(tf.linalg.global_norm(grads))
         train_loss.update_state(total_loss)
         loc.update_state(loc_loss)
         conf.update_state(conf_loss)
@@ -477,7 +454,7 @@ def main(argv):
                 if valid_iter > FLAGS.valid_iter:
                     break
                 # calculate validation loss
-                output = model([valid_image, None], training=False)
+                output = model([valid_image, valid_labels['boxes_norm']], training=False)
 
                 valid_loc_loss, valid_conf_loss, valid_mask_loss, \
                 valid_mask_iou_loss = \
@@ -524,7 +501,7 @@ def main(argv):
                         standard_fields.InputDataFields.groundtruth_classes: gt_classes,
                       })
 
-                det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.5)
+                det_num = np.count_nonzero(output['detection_scores'][0].numpy()> config.CONF_THRESH)
 
                 det_boxes = output['detection_boxes'][0][:det_num]
                 det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
