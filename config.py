@@ -70,7 +70,7 @@ class Config(object):
 
     PREDICT_MASK = True
     # Pooled ROIs
-    MASK_POOL_SIZE = 7
+    MASK_POOL_SIZE = 14
 
     # Shape of output mask
     # To change this you also need to change the neural network mask branch
