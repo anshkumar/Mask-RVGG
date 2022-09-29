@@ -20,7 +20,7 @@ class Detect(object):
         self.max_output_size = max_output_size
         self.per_class_max_output_size = per_class_max_output_size
 
-    def __call__(self, net_outs, img_shape, trad_nms=False, use_cropped_mask=True):
+    def __call__(self, net_outs, trad_nms=False, use_cropped_mask=True):
         """
         Args:
              pred_offset: (tensor) Loc preds from loc layers

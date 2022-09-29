@@ -115,12 +115,12 @@ def main(argv):
             image = cv2.resize(image_org, (512, 512))
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = image.astype(np.float32)
-            output = infer([tf.constant(image[None, ...]), None])
+            output = infer(input_1=tf.constant(image[None, ...]))
 
             _h = image_org.shape[0]
             _w = image_org.shape[1]
 
-            det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.15)
+            det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.05)
             det_boxes = output['detection_boxes'][0][:det_num]
             det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
             if IS_MASK:

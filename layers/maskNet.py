@@ -227,7 +227,7 @@ class MaskHead(keras.layers.Layer):
         # ROI Pooling
         # Shape: [batch, num_rois, MASK_POOL_SIZE, MASK_POOL_SIZE, channels]
         x = self.roiAlign(rois, feature_maps, config)
-
+        
         # Conv layers
         x = self.conv_1(x)
         x = self.batch_norm_1(x)

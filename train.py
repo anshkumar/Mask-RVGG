@@ -523,7 +523,6 @@ def main(argv):
                       if boxW > 0 and boxH > 0:
                         _m = cv2.resize(_m, (boxW, boxH))
                         det_masked_image[_b][startY:endY, startX:endX] = _m
-                  
                   coco_evaluator.add_single_detected_image_info(
                       image_id='image'+str(image_id),
                       detections_dict={
@@ -693,16 +692,6 @@ def main(argv):
                                         v_conf.result(),
                                         v_mask.result(),
                                         v_mask_iou.result()))
-            if valid_loss.result() < best_val:
-                best_val = valid_loss.result()
-                save_options = tf.saved_model.SaveOptions(
-                  namespace_whitelist=['Addons'])
-
-                model.save(os.path.join(
-                  FLAGS.saved_models_dir, 
-                  'saved_model_'+ str(valid_loss.result().numpy())), 
-                options=save_options)
-
             # reset the metrics
             valid_loss.reset_states()
             v_loc.reset_states()

@@ -124,9 +124,7 @@ class MaskED(tf.keras.Model):
     @tf.function()
     def call(self, inputs, training=False):
         inputs, gt_boxes = inputs[0], inputs[1]
-        inputs = tf.cast(inputs, tf.float32)
-        #image_norm = tf.keras.layers.Normalization(mean=[0.485, 0.456, 0.406], variance=[np.square(0.299), np.square(0.224), np.square(0.225)])
-        #features = self.backbone(image_norm(inputs/255), training=True)
+
         if self.config.BACKBONE == 'resnet50':
             inputs = tf.keras.applications.resnet50.preprocess_input(inputs)
 
@@ -157,21 +155,14 @@ class MaskED(tf.keras.Model):
             'priors': self.priors
         }
 
-        pred.update(self.detect(pred, img_shape=tf.shape(inputs)))
+        pred.update(self.detect(pred))
 
         if self.config.PREDICT_MASK:
-            if gt_boxes is not None:
-                masks = self.mask_head(gt_boxes,
-                                features[:-2],
-                                self.num_classes,
-                                self.config,
-                                training)
-            else:
-                masks = self.mask_head(pred['detection_boxes'],
-                                features[:-2],
-                                self.num_classes,
-                                self.config,
-                                training)
+            masks = self.mask_head(gt_boxes,
+                            features[:-2],
+                            self.num_classes,
+                            self.config,
+                            training)
             pred.update({'detection_masks': masks})
 
         return pred
