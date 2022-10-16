@@ -186,6 +186,7 @@ class Loss(object):
         return [loss_conf*self._loss_weight_cls]
 
     def _loss_mask(self):
+        
         p_mask = tf.reshape(self.pred_mask, (-1, tf.shape(self.pred_mask)[2], tf.shape(self.pred_mask)[3], tf.shape(self.pred_mask)[4]))
         gt_mask = tf.reshape(self.masks, (-1, tf.shape(self.masks)[2], tf.shape(self.masks)[3]))
         # p_mask = tf.gather_nd(p_mask, iou_max_id)
@@ -263,7 +264,7 @@ class Loss(object):
             # Take only positive samples
             pos_p_masks = tf.gather_nd(p_mask, class_gt_id)
             pos_gt_masks = tf.gather_nd(gt_mask, class_gt_id)
-            pos_classes = tf.gather_nd(classes, class_gt_id)
+            pos_classes = tf.gather_nd(classes, class_gt_id)-1
 
             pos_p_masks = tf.transpose(pos_p_masks, (3,0,1,2))
             _idx = tf.stack((pos_classes, tf.range(tf.shape(pos_classes)[0], dtype=tf.int64)),axis=1)
