@@ -141,9 +141,11 @@ def main(argv):
                 if IS_MASK:
                   rle_mask = None
                   _m = det_masks[i][:, :, _class-1]
+                  det_mask = np.zeros((_h, _w))
                   if boxW > 0 and boxH > 0:
                     _m = cv2.resize(_m, (boxW, boxH))
-                    mask = np.array(_m > 0.5, dtype=np.bool, order='F')
+                    det_mask[_y1:_y2, _x1:_x2] = _m
+                    mask = np.array(det_mask > 0.5, dtype=np.bool, order='F')
                     rle_mask = m.encode(mask)
                     rle_mask['counts'] = rle_mask['counts'].decode('ascii')
 
@@ -159,7 +161,6 @@ def main(argv):
                   annotations_lst.append({
                       "image_id": _info["id"],
                       "category_id": _class,
-                      "bbox": [_x1,_y1,_x2-_x1,_y2-_y1],
                       "segmentation": rle_mask,
                       "score": float(det_scores[i])
                       })
