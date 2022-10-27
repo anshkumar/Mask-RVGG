@@ -302,7 +302,6 @@ def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
         metrics.global_norm.reset_states()
         train_tic = time.time()
         
-
 def update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, config):
     if config.PREDICT_MASK:
         metrics.precision_mAP.update_state(
@@ -447,7 +446,6 @@ def update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, co
                                 metrics.v_conf.result(),
                                 metrics.v_mask.result(),
                                 metrics.v_mask_iou.result()))
-
 
 def add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, _h,_w):
     image_id = int(time.time()*1000000)
@@ -622,6 +620,7 @@ def main(argv):
     best_val = 1e10
     iterations = checkpoint.step.numpy()
 
+    @tf.function
     def train_step(image, labels):
         clip_factor=0.01
         eps=1e-3
@@ -694,7 +693,7 @@ def main(argv):
 
             # validation
             valid_iter = 0
-            for valid_image, valid_labels in tqdm(valid_dataset, total=FLAGS.valid_iter):
+            for valid_image, valid_labels in tqdm(valid_dataset, ):
                 if valid_iter > FLAGS.valid_iter:
                     break
                 # calculate validation loss

@@ -310,6 +310,7 @@ def _traditional_nms_v2(boxes, scores, iou_threshold=0.5, score_threshold=0.05, 
     classes = tf.cast(tf.gather(classes, selected_indices), dtype=tf.float32)
     return boxes, classes, scores
 
+@tf.function
 def _cc_fast_nms(boxes, scores, iou_threshold:float=0.5, top_k:int=15):
     # Cross Class NMS
     # Collapse all the classes into 1 
