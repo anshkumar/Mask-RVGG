@@ -255,7 +255,9 @@ def get_checkpoint_manager(model, optimizer):
           logging.info("Initializing from scratch.")
     return checkpoint, manager
 
+train_tic = time.time()
 def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
+    global train_tic
     with train_summary_writer.as_default():
       with tf.name_scope("loss_train"):
         tf.summary.scalar('Total loss', 
@@ -281,7 +283,7 @@ def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
         logging.info(
             ("Iteration {}, LR: {}, Total Loss: {:.4f}, B: {:.4f},  "
               "C: {:.4f}, M: {:.4f}, I: {:.4f}, "
-              "global_norm:{:.4f} ").format(
+              "global_norm:{:.4f} ({:.1f} seconds)").format(
             iterations,
             decayed_lr,
             metrics.train_loss.result(), 
@@ -289,7 +291,8 @@ def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
             metrics.conf.result(),
             metrics.mask.result(),
             metrics.mask_iou.result(),
-            metrics.global_norm.result()
+            metrics.global_norm.result(),
+            time.time()-train_tic
         ))
         metrics.train_loss.reset_states()
         metrics.loc.reset_states()
@@ -297,58 +300,60 @@ def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
         metrics.mask.reset_states()
         metrics.mask_iou.reset_states()
         metrics.global_norm.reset_states()
+        train_tic = time.time()
+        
 
 def update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, config):
     if config.PREDICT_MASK:
         metrics.precision_mAP.update_state(
-          coco_metrics.metrics['DetectionMasks_Precision/mAP'])
+          coco_metrics['DetectionMasks_Precision/mAP'])
         metrics.precision_mAP_50IOU.update_state(
-          coco_metrics.metrics['DetectionMasks_Precision/mAP@.50IOU'])
+          coco_metrics['DetectionMasks_Precision/mAP@.50IOU'])
         metrics.precision_mAP_75IOU.update_state(
-          coco_metrics.metrics['DetectionMasks_Precision/mAP@.75IOU'])
+          coco_metrics['DetectionMasks_Precision/mAP@.75IOU'])
         metrics.precision_mAP_small.update_state(
-          coco_metrics.metrics['DetectionMasks_Precision/mAP (small)'])
+          coco_metrics['DetectionMasks_Precision/mAP (small)'])
         metrics.precision_mAP_medium.update_state(
-          coco_metrics.metrics['DetectionMasks_Precision/mAP (medium)'])
+          coco_metrics['DetectionMasks_Precision/mAP (medium)'])
         metrics.precision_mAP_large.update_state(
-          coco_metrics.metrics['DetectionMasks_Precision/mAP (large)'])
+          coco_metrics['DetectionMasks_Precision/mAP (large)'])
         metrics.recall_AR_1.update_state(
-          coco_metrics.metrics['DetectionMasks_Recall/AR@1'])
+          coco_metrics['DetectionMasks_Recall/AR@1'])
         metrics.recall_AR_10.update_state(
-          coco_metrics.metrics['DetectionMasks_Recall/AR@10'])
+          coco_metrics['DetectionMasks_Recall/AR@10'])
         metrics.recall_AR_100.update_state(
-          coco_metrics.metrics['DetectionMasks_Recall/AR@100'])
+          coco_metrics['DetectionMasks_Recall/AR@100'])
         metrics.recall_AR_100_small.update_state(
-          coco_metrics.metrics['DetectionMasks_Recall/AR@100 (small)'])
+          coco_metrics['DetectionMasks_Recall/AR@100 (small)'])
         metrics.recall_AR_100_medium.update_state(
-          coco_metrics.metrics['DetectionMasks_Recall/AR@100 (medium)'])
+          coco_metrics['DetectionMasks_Recall/AR@100 (medium)'])
         metrics.recall_AR_100_large.update_state(
-          coco_metrics.metrics['DetectionMasks_Recall/AR@100 (large)'])
+          coco_metrics['DetectionMasks_Recall/AR@100 (large)'])
     else:
         metrics.precision_mAP.update_state(
-          coco_metrics.metrics['DetectionBoxes_Precision/mAP'])
+          coco_metrics['DetectionBoxes_Precision/mAP'])
         metrics.precision_mAP_50IOU.update_state(
-          coco_metrics.metrics['DetectionBoxes_Precision/mAP@.50IOU'])
+          coco_metrics['DetectionBoxes_Precision/mAP@.50IOU'])
         metrics.precision_mAP_75IOU.update_state(
-          coco_metrics.metrics['DetectionBoxes_Precision/mAP@.75IOU'])
+          coco_metrics['DetectionBoxes_Precision/mAP@.75IOU'])
         metrics.precision_mAP_small.update_state(
-          coco_metrics.metrics['DetectionBoxes_Precision/mAP (small)'])
+          coco_metrics['DetectionBoxes_Precision/mAP (small)'])
         metrics.precision_mAP_medium.update_state(
-          coco_metrics.metrics['DetectionBoxes_Precision/mAP (medium)'])
+          coco_metrics['DetectionBoxes_Precision/mAP (medium)'])
         metrics.precision_mAP_large.update_state(
-          coco_metrics.metrics['DetectionBoxes_Precision/mAP (large)'])
+          coco_metrics['DetectionBoxes_Precision/mAP (large)'])
         metrics.recall_AR_1.update_state(
-          coco_metrics.metrics['DetectionBoxes_Recall/AR@1'])
+          coco_metrics['DetectionBoxes_Recall/AR@1'])
         metrics.recall_AR_10.update_state(
-          coco_metrics.metrics['DetectionBoxes_Recall/AR@10'])
+          coco_metrics['DetectionBoxes_Recall/AR@10'])
         metrics.recall_AR_100.update_state(
-          coco_metrics.metrics['DetectionBoxes_Recall/AR@100'])
+          coco_metrics['DetectionBoxes_Recall/AR@100'])
         metrics.recall_AR_100_small.update_state(
-          coco_metrics.metrics['DetectionBoxes_Recall/AR@100 (small)'])
+          coco_metrics['DetectionBoxes_Recall/AR@100 (small)'])
         metrics.recall_AR_100_medium.update_state(
-          coco_metrics.metrics['DetectionBoxes_Recall/AR@100 (medium)'])
+          coco_metrics['DetectionBoxes_Recall/AR@100 (medium)'])
         metrics.recall_AR_100_large.update_state(
-          coco_metrics.metrics['DetectionBoxes_Recall/AR@100 (large)'])
+          coco_metrics['DetectionBoxes_Recall/AR@100 (large)'])
 
     with test_summary_writer.as_default():
       with tf.name_scope("loss_val"):
@@ -668,7 +673,7 @@ def main(argv):
 
         checkpoint.step.assign_add(1)
         iterations += 1
-
+        
         if FLAGS.multi_gpu:
             loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads = distributed_train_step(image, labels)
         else:
@@ -689,7 +694,7 @@ def main(argv):
 
             # validation
             valid_iter = 0
-            for valid_image, valid_labels in tqdm(valid_dataset):
+            for valid_image, valid_labels in tqdm(valid_dataset, total=FLAGS.valid_iter):
                 if valid_iter > FLAGS.valid_iter:
                     break
                 # calculate validation loss
