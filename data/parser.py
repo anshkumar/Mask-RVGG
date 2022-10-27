@@ -51,15 +51,11 @@ class Parser(object):
         
         # ignore crowd annotation
         # https://github.com/AlexeyAB/darknet/issues/5567#issuecomment-626758944
-        tf.print("before classes: ", tf.shape(classes))
-        tf.print("before boxes: ", tf.shape(boxes))
         non_crowd_idx = tf.where(tf.logical_not(is_crowds))[:, 0]
         classes = tf.gather(classes, non_crowd_idx)
         boxes = tf.gather(boxes, non_crowd_idx)
         masks = tf.gather(masks, non_crowd_idx)
-        tf.print("after classes: ", tf.shape(classes))
-        tf.print("after boxes: ", tf.shape(boxes))
-
+        
         # resize mask
         masks = tf.cast(masks, tf.bool)
         masks = tf.cast(masks, tf.float32)

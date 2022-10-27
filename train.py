@@ -28,13 +28,6 @@ from tqdm import tqdm
 
 tf.random.set_seed(123)
 
-physical_devices = tf.config.list_physical_devices('GPU')
-try:
-        tf.config.experimental.set_memory_growth(physical_devices[0], True)
-except:
-        print("Invalid device or cannot modify virtual devices once initialized.")
-        pass
-
 FLAGS = flags.FLAGS
 
 flags.DEFINE_string('tfrecord_train_dir', './data/coco/train',
@@ -57,11 +50,10 @@ flags.DEFINE_float('save_interval', 10000,
                    'number of iteration between saving model(checkpoint)')
 flags.DEFINE_float('valid_iter', 20,
                    'number of iteration during validation')
+flags.DEFINE_bool('multi_gpu', False,
+                   'whether to use multi gpu training or not.')
 
-'''
-def _get_categories_list():
-  
-'''
+# def _get_categories_list():
 def _validate_label_map(label_map):
   # https://github.com/tensorflow/models/blob/
   # 67fd2bef6500c14b95e0b0de846960ed13802405/research/object_detection/utils/
@@ -155,54 +147,34 @@ def adaptive_clip_grad(parameters, gradients, clip_factor=0.01,
         new_grads.append(new_grad)
     return new_grads
 
-def main(argv):
-    # set up Grappler for graph optimization
-    # Ref: https://www.tensorflow.org/guide/graph_optimization
-    @contextlib.contextmanager
-    def options(options):
-        old_opts = tf.config.optimizer.get_experimental_options()
-        tf.config.optimizer.set_experimental_options(options)
-        try:
-            yield
-        finally:
-            tf.config.optimizer.set_experimental_options(old_opts)
-
-    config = Config()
-    config.display()
-    model = MaskED(config)
-
-    # -----------------------------------------------------------------
-    # Choose the Optimizor, Loss Function, and Metrics, learning rate schedule 
-
-    # add weight decay
-    # Skip gamma and beta weights of batch normalization layers.
-    def add_weight_decay(model, weight_decay):
-        # https://github.com/keras-team/keras/issues/12053
-        if (weight_decay is None) or (weight_decay == 0.0):
-            return
-
-        # recursion inside the model
-        def add_decay_loss(m, factor):
-            if isinstance(m, tf.keras.Model):
-                for layer in m.layers:
-                    add_decay_loss(layer, factor)
-            else:
-                for param in m.trainable_weights:
-                  # if 'gamma' not in param.name and 'beta' not in param.name:
-                    with tf.keras.backend.name_scope('weight_regularizer'):
-                        regularizer = lambda: tf.keras.regularizers.l2(factor)(param)
-                        m.add_loss(regularizer)
-
-        # weight decay and l2 regularization differs by a factor of 2
-        # because the weights are updated as w := w - l_r * L(w,x) - 2 * l_r * l2 * w
-        # where L-r is learning rate, l2 is L2 regularization factor. The whole (2 * l2)
-        # forms a weight decay factor. So, in pytorch where weight decay is directly given
-        # and in tf where l2 regularization has to be used differs by a factor of 2.
-        add_decay_loss(model, weight_decay/2.0)
+# add weight decay
+# Skip gamma and beta weights of batch normalization layers.
+def add_weight_decay(model, weight_decay):
+    # https://github.com/keras-team/keras/issues/12053
+    if (weight_decay is None) or (weight_decay == 0.0):
         return
 
-    add_weight_decay(model, config.WEIGHT_DECAY)   
+    # recursion inside the model
+    def add_decay_loss(m, factor):
+        if isinstance(m, tf.keras.Model):
+            for layer in m.layers:
+                add_decay_loss(layer, factor)
+        else:
+            for param in m.trainable_weights:
+              # if 'gamma' not in param.name and 'beta' not in param.name:
+                with tf.keras.backend.name_scope('weight_regularizer'):
+                    regularizer = lambda: tf.keras.regularizers.l2(factor)(param)
+                    m.add_loss(regularizer)
 
+    # weight decay and l2 regularization differs by a factor of 2
+    # because the weights are updated as w := w - l_r * L(w,x) - 2 * l_r * l2 * w
+    # where L-r is learning rate, l2 is L2 regularization factor. The whole (2 * l2)
+    # forms a weight decay factor. So, in pytorch where weight decay is directly given
+    # and in tf where l2 regularization has to be used differs by a factor of 2.
+    add_decay_loss(model, weight_decay/2.0)
+    return
+
+def get_optimizer(config):
     logging.info("Initiate the Optimizer and Loss function...")
     if config.OPTIMIZER == 'SGD':
       logging.info("Using SGD optimizer")
@@ -243,11 +215,11 @@ def main(argv):
       if config.GRADIENT_CLIP_NORM is not None:
         optimizer = tfa.optimizers.AdamW(
           learning_rate=lr_schedule, 
-          weight_decay=FLAGS.weight_decay, clipnorm=config.GRADIENT_CLIP_NORM)
+          weight_decay=config.WEIGHT_DECAY, clipnorm=config.GRADIENT_CLIP_NORM)
       else:
         optimizer = tfa.optimizers.AdamW(
           learning_rate=lr_schedule,
-          weight_decay=FLAGS.weight_decay)
+          weight_decay=config.WEIGHT_DECAY)
     elif config.OPTIMIZER == 'AdaBelief':
       optimizer = tfa.optimizers.AdaBelief(
           lr=config.LEARNING_RATE,
@@ -256,6 +228,9 @@ def main(argv):
           min_lr=config.LEARNING_RATE*config.LEARNING_RATE,
           rectify=True)
 
+    return optimizer
+
+def get_checkpoint_manager(model, optimizer):
     # setup checkpoints manager
     checkpoint = tf.train.Checkpoint(
       step=tf.Variable(1), optimizer=optimizer, model=model)
@@ -278,6 +253,320 @@ def main(argv):
             FLAGS.pretrained_checkpoints))
         else:
           logging.info("Initializing from scratch.")
+    return checkpoint, manager
+
+def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
+    with train_summary_writer.as_default():
+      with tf.name_scope("loss_train"):
+        tf.summary.scalar('Total loss', 
+          metrics.train_loss.result(), step=iterations)
+
+        tf.summary.scalar('Loc loss', 
+          metrics.loc.result(), step=iterations)
+
+        tf.summary.scalar('Conf loss', 
+          metrics.conf.result(), step=iterations)
+
+        tf.summary.scalar('Mask loss', 
+          metrics.mask.result(), step=iterations)
+
+        tf.summary.scalar('Mask IOU loss', 
+          metrics.mask_iou.result(), step=iterations)
+
+      with tf.name_scope("norm"):
+        tf.summary.scalar('Global Norm', 
+          metrics.global_norm.result(), step=iterations)
+
+    if iterations and iterations % FLAGS.print_interval == 0:
+        logging.info(
+            ("Iteration {}, LR: {}, Total Loss: {:.4f}, B: {:.4f},  "
+              "C: {:.4f}, M: {:.4f}, I: {:.4f}, "
+              "global_norm:{:.4f} ").format(
+            iterations,
+            decayed_lr,
+            metrics.train_loss.result(), 
+            metrics.loc.result(),
+            metrics.conf.result(),
+            metrics.mask.result(),
+            metrics.mask_iou.result(),
+            metrics.global_norm.result()
+        ))
+        metrics.train_loss.reset_states()
+        metrics.loc.reset_states()
+        metrics.conf.reset_states()
+        metrics.mask.reset_states()
+        metrics.mask_iou.reset_states()
+        metrics.global_norm.reset_states()
+
+def update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, config):
+    if config.PREDICT_MASK:
+        metrics.precision_mAP.update_state(
+          coco_metrics.metrics['DetectionMasks_Precision/mAP'])
+        metrics.precision_mAP_50IOU.update_state(
+          coco_metrics.metrics['DetectionMasks_Precision/mAP@.50IOU'])
+        metrics.precision_mAP_75IOU.update_state(
+          coco_metrics.metrics['DetectionMasks_Precision/mAP@.75IOU'])
+        metrics.precision_mAP_small.update_state(
+          coco_metrics.metrics['DetectionMasks_Precision/mAP (small)'])
+        metrics.precision_mAP_medium.update_state(
+          coco_metrics.metrics['DetectionMasks_Precision/mAP (medium)'])
+        metrics.precision_mAP_large.update_state(
+          coco_metrics.metrics['DetectionMasks_Precision/mAP (large)'])
+        metrics.recall_AR_1.update_state(
+          coco_metrics.metrics['DetectionMasks_Recall/AR@1'])
+        metrics.recall_AR_10.update_state(
+          coco_metrics.metrics['DetectionMasks_Recall/AR@10'])
+        metrics.recall_AR_100.update_state(
+          coco_metrics.metrics['DetectionMasks_Recall/AR@100'])
+        metrics.recall_AR_100_small.update_state(
+          coco_metrics.metrics['DetectionMasks_Recall/AR@100 (small)'])
+        metrics.recall_AR_100_medium.update_state(
+          coco_metrics.metrics['DetectionMasks_Recall/AR@100 (medium)'])
+        metrics.recall_AR_100_large.update_state(
+          coco_metrics.metrics['DetectionMasks_Recall/AR@100 (large)'])
+    else:
+        metrics.precision_mAP.update_state(
+          coco_metrics.metrics['DetectionBoxes_Precision/mAP'])
+        metrics.precision_mAP_50IOU.update_state(
+          coco_metrics.metrics['DetectionBoxes_Precision/mAP@.50IOU'])
+        metrics.precision_mAP_75IOU.update_state(
+          coco_metrics.metrics['DetectionBoxes_Precision/mAP@.75IOU'])
+        metrics.precision_mAP_small.update_state(
+          coco_metrics.metrics['DetectionBoxes_Precision/mAP (small)'])
+        metrics.precision_mAP_medium.update_state(
+          coco_metrics.metrics['DetectionBoxes_Precision/mAP (medium)'])
+        metrics.precision_mAP_large.update_state(
+          coco_metrics.metrics['DetectionBoxes_Precision/mAP (large)'])
+        metrics.recall_AR_1.update_state(
+          coco_metrics.metrics['DetectionBoxes_Recall/AR@1'])
+        metrics.recall_AR_10.update_state(
+          coco_metrics.metrics['DetectionBoxes_Recall/AR@10'])
+        metrics.recall_AR_100.update_state(
+          coco_metrics.metrics['DetectionBoxes_Recall/AR@100'])
+        metrics.recall_AR_100_small.update_state(
+          coco_metrics.metrics['DetectionBoxes_Recall/AR@100 (small)'])
+        metrics.recall_AR_100_medium.update_state(
+          coco_metrics.metrics['DetectionBoxes_Recall/AR@100 (medium)'])
+        metrics.recall_AR_100_large.update_state(
+          coco_metrics.metrics['DetectionBoxes_Recall/AR@100 (large)'])
+
+    with test_summary_writer.as_default():
+      with tf.name_scope("loss_val"):
+        tf.summary.scalar('V Total loss', 
+          metrics.valid_loss.result(), step=iterations)
+
+        tf.summary.scalar('V Loc loss', 
+          metrics.v_loc.result(), step=iterations)
+
+        tf.summary.scalar('V Conf loss', 
+          metrics.v_conf.result(), step=iterations)
+
+        tf.summary.scalar('V Mask loss', 
+          metrics.v_mask.result(), step=iterations)
+
+        tf.summary.scalar('V Mask IOU loss', 
+          metrics.v_mask_iou.result(), step=iterations)
+
+      with tf.name_scope("precision"):
+        tf.summary.scalar('Precision mAP', 
+          metrics.precision_mAP.result(), step=iterations)
+
+        tf.summary.scalar('Precision mAP@.50IOU', 
+          metrics.precision_mAP_50IOU.result(), step=iterations)
+
+        tf.summary.scalar('precision mAP@.75IOU', 
+          metrics.precision_mAP_75IOU.result(), step=iterations)
+
+        tf.summary.scalar('precision mAP (small)', 
+          metrics.precision_mAP_small.result(), step=iterations)
+
+        tf.summary.scalar('precision mAP (medium)', 
+          metrics.precision_mAP_medium.result(), step=iterations)
+
+        tf.summary.scalar('precision mAP (large)', 
+          metrics.precision_mAP_large.result(), step=iterations)
+
+      with tf.name_scope("recall"):
+        tf.summary.scalar('recall AR@1', 
+          metrics.recall_AR_1.result(), step=iterations)
+
+        tf.summary.scalar('recall AR@10', 
+          metrics.recall_AR_10.result(), step=iterations)
+
+        tf.summary.scalar('recall AR@100', 
+          metrics.recall_AR_100.result(), step=iterations)
+
+        tf.summary.scalar('recall AR@100 (small)', 
+          metrics.recall_AR_100_small.result(), step=iterations)
+
+        tf.summary.scalar('recall AR@100 (medium)', 
+          metrics.recall_AR_100_medium.result(), step=iterations)
+
+        tf.summary.scalar('recall AR@100 (large)', 
+          metrics.recall_AR_100_large.result(), step=iterations)
+
+    train_template = ("Iteration {}, Train Loss: {}, Loc Loss: {},  "
+      "Conf Loss: {}, Mask Loss: {}, Mask IOU Loss: {}, "
+      "Global Norm: {}")
+
+    valid_template = ("Iteration {}, Precision mAP: {}, Precision "
+      "mAP@.50IOU: {}, precision mAP@.75IOU: {}, precision mAP (small)"
+      ": {}, precision mAP (medium): {}, precision mAP (large): {}, "
+      " recall AR@1: {}, recall AR@10: {}, recall AR@100: {}, recall "
+      "AR@100 (small): {}, recall AR@100 (medium): {}, recall AR@100 "
+      "(large): {}\nValid Loss: {}, V Loc Loss: {},  "
+      "V Conf Loss: {}, V Mask Loss: {}, V Mask IOU Loss: {}")
+
+    logging.info(train_template.format(iterations + 1,
+                                metrics.train_loss.result(),
+                                metrics.loc.result(),
+                                metrics.conf.result(),
+                                metrics.mask.result(),
+                                metrics.mask_iou.result(),
+                                metrics.global_norm.result()))
+    logging.info(valid_template.format(iterations + 1,
+                                metrics.precision_mAP.result(),
+                                metrics.precision_mAP_50IOU.result(),
+                                metrics.precision_mAP_75IOU.result(),
+                                metrics.precision_mAP_small.result(),
+                                metrics.precision_mAP_medium.result(),
+                                metrics.precision_mAP_large.result(),
+                                metrics.recall_AR_1.result(),
+                                metrics.recall_AR_10.result(),
+                                metrics.recall_AR_100.result(),
+                                metrics.recall_AR_100_small.result(),
+                                metrics.recall_AR_100_medium.result(),
+                                metrics.recall_AR_100_large.result(),
+                                metrics.valid_loss.result(),
+                                metrics.v_loc.result(),
+                                metrics.v_conf.result(),
+                                metrics.v_mask.result(),
+                                metrics.v_mask_iou.result()))
+
+
+def add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, _h,_w):
+    image_id = int(time.time()*1000000)
+    gt_num_box = valid_labels['num_obj'][0].numpy()
+    gt_boxes = valid_labels['boxes_norm'][0][:gt_num_box]
+    gt_boxes = gt_boxes.numpy()*np.array([_h,_w,_h,_w])
+    gt_classes = valid_labels['classes'][0][:gt_num_box].numpy()
+
+    if config.PREDICT_MASK:
+      gt_masks = valid_labels['mask_target'][0][:gt_num_box].numpy()
+
+      # gt_masked_image = np.zeros((gt_num_box, _h, _w), dtype=np.uint8)
+      # for _b in range(gt_num_box):
+      #     box = gt_boxes[_b]
+      #     box = np.round(box).astype(int)
+      #     (startY, startX, endY, endX) = box.astype("int")
+      #     boxW = endX - startX
+      #     boxH = endY - startY
+      #     if boxW > 0 and boxH > 0:
+      #       _m = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
+      #       gt_masked_image[_b][startY:endY, startX:endX] = _m
+
+      coco_evaluator.add_single_ground_truth_image_info(
+          image_id='image'+str(image_id),
+          groundtruth_dict={
+            standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
+            standard_fields.InputDataFields.groundtruth_classes: gt_classes,
+            standard_fields.InputDataFields.groundtruth_instance_masks: gt_masks
+          })
+    else:
+      coco_evaluator.add_single_ground_truth_image_info(
+          image_id='image'+str(image_id),
+          groundtruth_dict={
+            standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
+            standard_fields.InputDataFields.groundtruth_classes: gt_classes,
+          })
+
+    det_num = np.count_nonzero(output['detection_scores'][0].numpy()> config.CONF_THRESH)
+
+    det_boxes = output['detection_boxes'][0][:det_num]
+    det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
+    det_scores = output['detection_scores'][0][:det_num].numpy()
+    det_classes = output['detection_classes'][0][:det_num].numpy().astype(int)
+
+    if config.PREDICT_MASK:
+      det_masks = output['detection_masks'][0][:det_num].numpy()
+      det_masks = (det_masks > 0.5).astype("uint8")
+      det_masked_image = np.zeros((det_num, _h, _w), dtype=np.uint8)
+      for _b in range(det_num):
+          box = det_boxes[_b]
+          _c = det_classes[_b] - 1
+          _m = det_masks[_b][:, :, _c]
+          box = np.round(box).astype(int)
+          (startY, startX, endY, endX) = box.astype("int")
+          boxW = endX - startX
+          boxH = endY - startY
+          if boxW > 0 and boxH > 0:
+            _m = cv2.resize(_m, (boxW, boxH))
+            det_masked_image[_b][startY:endY, startX:endX] = _m
+      coco_evaluator.add_single_detected_image_info(
+          image_id='image'+str(image_id),
+          detections_dict={
+              standard_fields.DetectionResultFields.detection_boxes: det_boxes,
+              standard_fields.DetectionResultFields.detection_scores: det_scores,
+              standard_fields.DetectionResultFields.detection_classes: det_classes,
+              standard_fields.DetectionResultFields.detection_masks: det_masked_image
+          })
+    else:
+      coco_evaluator.add_single_detected_image_info(
+          image_id='image'+str(image_id),
+          detections_dict={
+              standard_fields.DetectionResultFields.detection_boxes: det_boxes,
+              standard_fields.DetectionResultFields.detection_scores: det_scores,
+              standard_fields.DetectionResultFields.detection_classes: det_classes,
+          })
+
+def init():
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if FLAGS.multi_gpu:
+      try:
+        for i in len(physical_devices):
+          tf.config.experimental.set_memory_growth(physical_devices[i], True)
+          # tf.config.experimental.set_virtual_device_configuration(physical_devices[i], [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=19240)])
+      except:
+              print("Invalid device or cannot modify virtual devices once initialized.")
+              pass
+    else:
+      try:
+              tf.config.experimental.set_memory_growth(physical_devices[0], True)
+      except:
+              print("Invalid device or cannot modify virtual devices once initialized.")
+              pass
+
+# set up Grappler for graph optimization
+# Ref: https://www.tensorflow.org/guide/graph_optimization
+@contextlib.contextmanager
+def options(options):
+    old_opts = tf.config.optimizer.get_experimental_options()
+    tf.config.optimizer.set_experimental_options(options)
+    try:
+        yield
+    finally:
+        tf.config.optimizer.set_experimental_options(old_opts)
+
+def main(argv):
+    init()
+    config = Config()
+    config.display()
+    mirrored_strategy = tf.distribute.MirroredStrategy()
+
+    if FLAGS.multi_gpu:
+        with mirrored_strategy.scope():
+            model = MaskED(config)
+            add_weight_decay(model, config.WEIGHT_DECAY)   
+            optimizer = get_optimizer(config)
+            checkpoint, manager = get_checkpoint_manager(model, optimizer)
+        BATCH_SIZE_PER_REPLICA = config.BATCH_SIZE
+        global_batch_size = (BATCH_SIZE_PER_REPLICA *
+                        mirrored_strategy.num_replicas_in_sync)
+    else:
+        model = MaskED(config)
+        add_weight_decay(model, config.WEIGHT_DECAY)   
+        optimizer = get_optimizer(config)
+        checkpoint, manager = get_checkpoint_manager(model, optimizer)
 
     # -----------------------------------------------------------------
     # Creating dataloaders for training and validation
@@ -287,8 +576,10 @@ def main(argv):
       config, 
       tfrecord_dir=FLAGS.tfrecord_train_dir,
       feature_map_size=model.feature_map_size,
-      batch_size=config.BATCH_SIZE,
+      batch_size=global_batch_size if FLAGS.multi_gpu else config.BATCH_SIZE,
       subset='train')
+    if FLAGS.multi_gpu:
+        train_dataset_dist = mirrored_strategy.experimental_distribute_dataset(train_dataset)
 
     logging.info("Creating the validation dataloader from: %s..." % \
       FLAGS.tfrecord_val_dir)
@@ -300,43 +591,7 @@ def main(argv):
       subset='val')
 
     criterion = loss.Loss(config)
-    train_loss = tf.keras.metrics.Mean('train_loss', dtype=tf.float32)
-    valid_loss = tf.keras.metrics.Mean('valid_loss', dtype=tf.float32)
-    loc = tf.keras.metrics.Mean('loc_loss', dtype=tf.float32)
-    conf = tf.keras.metrics.Mean('conf_loss', dtype=tf.float32)
-    mask = tf.keras.metrics.Mean('mask_loss', dtype=tf.float32)
-    mask_iou = tf.keras.metrics.Mean('mask_iou_loss', dtype=tf.float32)
-    v_loc = tf.keras.metrics.Mean('vloc_loss', dtype=tf.float32)
-    v_conf = tf.keras.metrics.Mean('vconf_loss', dtype=tf.float32)
-    v_mask = tf.keras.metrics.Mean('vmask_loss', dtype=tf.float32)
-    v_mask_iou = tf.keras.metrics.Mean('vmask_iou_loss', dtype=tf.float32)
-    global_norm = tf.keras.metrics.Mean('global_norm', dtype=tf.float32)
-    precision_mAP = tf.keras.metrics.Mean('precision_mAP', dtype=tf.float32)
-    precision_mAP_50IOU = tf.keras.metrics.Mean('precision_mAP_50IOU', 
-      dtype=tf.float32)
-    precision_mAP_75IOU = tf.keras.metrics.Mean('precision_mAP_75IOU', 
-      dtype=tf.float32)
-    precision_mAP_small = tf.keras.metrics.Mean('precision_mAP_small', 
-      dtype=tf.float32)
-    precision_mAP_medium = tf.keras.metrics.Mean('precision_mAP_medium', 
-      dtype=tf.float32)
-    precision_mAP_large = tf.keras.metrics.Mean('precision_mAP_large', 
-      dtype=tf.float32)
-    recall_AR_1 = tf.keras.metrics.Mean('recall_AR_1', 
-      dtype=tf.float32)
-    recall_AR_10 = tf.keras.metrics.Mean('recall_AR_10', 
-      dtype=tf.float32)
-    recall_AR_100 = tf.keras.metrics.Mean('recall_AR_100', 
-      dtype=tf.float32)
-    recall_AR_100_small = tf.keras.metrics.Mean('recall_AR_100_small', 
-      dtype=tf.float32)
-    recall_AR_100_medium = tf.keras.metrics.Mean('recall_AR_100_medium', 
-      dtype=tf.float32)
-    recall_AR_100_large = tf.keras.metrics.Mean('recall_AR_100_large', 
-      dtype=tf.float32)
-
     # -----------------------------------------------------------------
-
     # Setup the TensorBoard for better visualization
     # Ref: https://www.tensorflow.org/tensorboard/get_started
     logging.info("Setup the TensorBoard...")
@@ -358,17 +613,11 @@ def main(argv):
       coco_evaluator = coco_evaluation.CocoDetectionEvaluator(
         _get_categories_list(FLAGS.label_map))
 
+    metrics = coco_evaluation.Matric()
     best_val = 1e10
     iterations = checkpoint.step.numpy()
 
-    for image, labels in train_dataset:
-        # check iteration and change the learning rate
-        if iterations > config.TRAIN_ITER:
-            break
-
-        checkpoint.step.assign_add(1)
-        iterations += 1
-
+    def train_step(image, labels):
         clip_factor=0.01
         eps=1e-3
         with options({'constant_folding': True,
@@ -381,65 +630,55 @@ def main(argv):
 
                 loc_loss, conf_loss, mask_loss, mask_iou_loss, \
                     = criterion(model, output, labels, config.NUM_CLASSES+1, image)
-                        
-                total_loss = tf.reduce_sum(loc_loss + conf_loss + mask_loss + mask_iou_loss)
+
+                if FLAGS.multi_gpu:
+                    loc_loss = tf.nn.compute_average_loss(loc_loss, global_batch_size=global_batch_size)
+                    conf_loss = tf.nn.compute_average_loss(conf_loss, global_batch_size=global_batch_size)
+                    mask_loss = tf.nn.compute_average_loss(mask_loss, global_batch_size=global_batch_size)
+                    mask_iou_loss = tf.nn.compute_average_loss(mask_iou_loss, global_batch_size=global_batch_size) 
+                    total_loss = loc_loss + conf_loss + mask_loss + mask_iou_loss
+                else:
+                    total_loss = tf.reduce_sum(loc_loss + conf_loss + mask_loss + mask_iou_loss)
+                    loc_loss = tf.reduce_sum(loc_loss)
+                    conf_loss = tf.reduce_sum(conf_loss)
+                    mask_loss = tf.reduce_sum(mask_loss)
+                    mask_iou_loss = tf.reduce_sum(mask_iou_loss)
             grads = tape.gradient(total_loss, model.trainable_variables)
             if config.USE_AGC:
               agc_gradients = adaptive_clip_grad(model.trainable_variables, grads, 
-                                                 clip_factor=clip_factor, eps=eps)
+                                                  clip_factor=clip_factor, eps=eps)
               optimizer.apply_gradients(zip(agc_gradients, model.trainable_variables))
-              global_norm.update_state(tf.linalg.global_norm(agc_gradients))
+              metrics.global_norm.update_state(tf.linalg.global_norm(agc_gradients))
             else:
               optimizer.apply_gradients(zip(grads, model.trainable_variables))
-              global_norm.update_state(tf.linalg.global_norm(grads))
+              metrics.global_norm.update_state(tf.linalg.global_norm(grads))
 
-        train_loss.update_state(total_loss)
-        loc.update_state(loc_loss)
-        conf.update_state(conf_loss)
-        mask.update_state(mask_loss)
-        mask_iou.update_state(mask_iou_loss)
+            return (loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads)
 
-        with train_summary_writer.as_default():
-          with tf.name_scope("loss_train"):
-            tf.summary.scalar('Total loss', 
-              train_loss.result(), step=iterations)
+    @tf.function
+    def distributed_train_step(image, labels):
+        per_replica_losses = mirrored_strategy.run(train_step, args=(image, labels,))
+        return mirrored_strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
+                         axis=None)
 
-            tf.summary.scalar('Loc loss', 
-              loc.result(), step=iterations)
+    for image, labels in train_dataset:
+        # check iteration and change the learning rate
+        if iterations > config.TRAIN_ITER:
+            break
 
-            tf.summary.scalar('Conf loss', 
-              conf.result(), step=iterations)
+        checkpoint.step.assign_add(1)
+        iterations += 1
 
-            tf.summary.scalar('Mask loss', 
-              mask.result(), step=iterations)
-
-            tf.summary.scalar('Mask IOU loss', 
-              mask_iou.result(), step=iterations)
-
-          with tf.name_scope("norm"):
-            tf.summary.scalar('Global Norm', 
-              global_norm.result(), step=iterations)
-
-        if iterations and iterations % FLAGS.print_interval == 0:
-            logging.info(
-                ("Iteration {}, LR: {}, Total Loss: {:.4f}, B: {:.4f},  "
-                  "C: {:.4f}, M: {:.4f}, I: {:.4f}, "
-                  "global_norm:{:.4f} ").format(
-                iterations,
-                optimizer._decayed_lr(var_dtype=tf.float32),
-                train_loss.result(), 
-                loc.result(),
-                conf.result(),
-                mask.result(),
-                mask_iou.result(),
-                global_norm.result()
-            ))
-            train_loss.reset_states()
-            loc.reset_states()
-            conf.reset_states()
-            mask.reset_states()
-            mask_iou.reset_states()
-            global_norm.reset_states()
+        if FLAGS.multi_gpu:
+            loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads = distributed_train_step(image, labels)
+        else:
+            loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads = train_step(image, labels)
+        metrics.train_loss.update_state(total_loss)
+        metrics.loc.update_state(loc_loss)
+        metrics.conf.update_state(conf_loss)
+        metrics.mask.update_state(mask_loss)
+        metrics.mask_iou.update_state(mask_iou_loss)
+        update_train_losses(train_summary_writer, iterations, metrics, optimizer._decayed_lr(var_dtype=tf.float32))
 
         if iterations and iterations % FLAGS.save_interval == 0:
             # save checkpoint
@@ -461,256 +700,19 @@ def main(argv):
                 criterion(model, output, valid_labels, config.NUM_CLASSES+1)
 
                 valid_total_loss = sum(valid_loc_loss + valid_conf_loss + valid_mask_loss + valid_mask_iou_loss)
-                valid_loss.update_state(valid_total_loss)
-
-                _h = valid_image.shape[1]
-                _w = valid_image.shape[2]
+                metrics.valid_loss.update_state(valid_total_loss)
+                metrics.v_loc.update_state(valid_loc_loss)
+                metrics.v_conf.update_state(valid_conf_loss)
+                metrics.v_mask.update_state(valid_mask_loss)
+                metrics.v_mask_iou.update_state(valid_mask_iou_loss)
                 
-                image_id = int(time.time()*1000000)
-                gt_num_box = valid_labels['num_obj'][0].numpy()
-                gt_boxes = valid_labels['boxes_norm'][0][:gt_num_box]
-                gt_boxes = gt_boxes.numpy()*np.array([_h,_w,_h,_w])
-                gt_classes = valid_labels['classes'][0][:gt_num_box].numpy()
-
-                if config.PREDICT_MASK:
-                  gt_masks = valid_labels['mask_target'][0][:gt_num_box].numpy()
-
-                  # gt_masked_image = np.zeros((gt_num_box, _h, _w), dtype=np.uint8)
-                  # for _b in range(gt_num_box):
-                  #     box = gt_boxes[_b]
-                  #     box = np.round(box).astype(int)
-                  #     (startY, startX, endY, endX) = box.astype("int")
-                  #     boxW = endX - startX
-                  #     boxH = endY - startY
-                  #     if boxW > 0 and boxH > 0:
-                  #       _m = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
-                  #       gt_masked_image[_b][startY:endY, startX:endX] = _m
-
-                  coco_evaluator.add_single_ground_truth_image_info(
-                      image_id='image'+str(image_id),
-                      groundtruth_dict={
-                        standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
-                        standard_fields.InputDataFields.groundtruth_classes: gt_classes,
-                        standard_fields.InputDataFields.groundtruth_instance_masks: gt_masks
-                      })
-                else:
-                  coco_evaluator.add_single_ground_truth_image_info(
-                      image_id='image'+str(image_id),
-                      groundtruth_dict={
-                        standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
-                        standard_fields.InputDataFields.groundtruth_classes: gt_classes,
-                      })
-
-                det_num = np.count_nonzero(output['detection_scores'][0].numpy()> config.CONF_THRESH)
-
-                det_boxes = output['detection_boxes'][0][:det_num]
-                det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
-                det_scores = output['detection_scores'][0][:det_num].numpy()
-                det_classes = output['detection_classes'][0][:det_num].numpy().astype(int)
-
-                if config.PREDICT_MASK:
-                  det_masks = output['detection_masks'][0][:det_num].numpy()
-                  det_masks = (det_masks > 0.5).astype("uint8")
-                  det_masked_image = np.zeros((det_num, _h, _w), dtype=np.uint8)
-                  for _b in range(det_num):
-                      box = det_boxes[_b]
-                      _c = det_classes[_b] - 1
-                      _m = det_masks[_b][:, :, _c]
-                      box = np.round(box).astype(int)
-                      (startY, startX, endY, endX) = box.astype("int")
-                      boxW = endX - startX
-                      boxH = endY - startY
-                      if boxW > 0 and boxH > 0:
-                        _m = cv2.resize(_m, (boxW, boxH))
-                        det_masked_image[_b][startY:endY, startX:endX] = _m
-                  coco_evaluator.add_single_detected_image_info(
-                      image_id='image'+str(image_id),
-                      detections_dict={
-                          standard_fields.DetectionResultFields.detection_boxes: det_boxes,
-                          standard_fields.DetectionResultFields.detection_scores: det_scores,
-                          standard_fields.DetectionResultFields.detection_classes: det_classes,
-                          standard_fields.DetectionResultFields.detection_masks: det_masked_image
-                      })
-                else:
-                  coco_evaluator.add_single_detected_image_info(
-                      image_id='image'+str(image_id),
-                      detections_dict={
-                          standard_fields.DetectionResultFields.detection_boxes: det_boxes,
-                          standard_fields.DetectionResultFields.detection_scores: det_scores,
-                          standard_fields.DetectionResultFields.detection_classes: det_classes,
-                      })
-
-                v_loc.update_state(valid_loc_loss)
-                v_conf.update_state(valid_conf_loss)
-                v_mask.update_state(valid_mask_loss)
-                v_mask_iou.update_state(valid_mask_iou_loss)
+                add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, valid_image.shape[1], valid_image.shape[2])
                 valid_iter += 1
 
-            metrics = coco_evaluator.evaluate()
-            if config.PREDICT_MASK:
-              precision_mAP.update_state(
-                metrics['DetectionMasks_Precision/mAP'])
-              precision_mAP_50IOU.update_state(
-                metrics['DetectionMasks_Precision/mAP@.50IOU'])
-              precision_mAP_75IOU.update_state(
-                metrics['DetectionMasks_Precision/mAP@.75IOU'])
-              precision_mAP_small.update_state(
-                metrics['DetectionMasks_Precision/mAP (small)'])
-              precision_mAP_medium.update_state(
-                metrics['DetectionMasks_Precision/mAP (medium)'])
-              precision_mAP_large.update_state(
-                metrics['DetectionMasks_Precision/mAP (large)'])
-              recall_AR_1.update_state(
-                metrics['DetectionMasks_Recall/AR@1'])
-              recall_AR_10.update_state(
-                metrics['DetectionMasks_Recall/AR@10'])
-              recall_AR_100.update_state(
-                metrics['DetectionMasks_Recall/AR@100'])
-              recall_AR_100_small.update_state(
-                metrics['DetectionMasks_Recall/AR@100 (small)'])
-              recall_AR_100_medium.update_state(
-                metrics['DetectionMasks_Recall/AR@100 (medium)'])
-              recall_AR_100_large.update_state(
-                metrics['DetectionMasks_Recall/AR@100 (large)'])
-            else:
-              precision_mAP.update_state(
-                metrics['DetectionBoxes_Precision/mAP'])
-              precision_mAP_50IOU.update_state(
-                metrics['DetectionBoxes_Precision/mAP@.50IOU'])
-              precision_mAP_75IOU.update_state(
-                metrics['DetectionBoxes_Precision/mAP@.75IOU'])
-              precision_mAP_small.update_state(
-                metrics['DetectionBoxes_Precision/mAP (small)'])
-              precision_mAP_medium.update_state(
-                metrics['DetectionBoxes_Precision/mAP (medium)'])
-              precision_mAP_large.update_state(
-                metrics['DetectionBoxes_Precision/mAP (large)'])
-              recall_AR_1.update_state(
-                metrics['DetectionBoxes_Recall/AR@1'])
-              recall_AR_10.update_state(
-                metrics['DetectionBoxes_Recall/AR@10'])
-              recall_AR_100.update_state(
-                metrics['DetectionBoxes_Recall/AR@100'])
-              recall_AR_100_small.update_state(
-                metrics['DetectionBoxes_Recall/AR@100 (small)'])
-              recall_AR_100_medium.update_state(
-                metrics['DetectionBoxes_Recall/AR@100 (medium)'])
-              recall_AR_100_large.update_state(
-                metrics['DetectionBoxes_Recall/AR@100 (large)'])
-
+            coco_metrics = coco_evaluator.evaluate()
+            update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, config)
             coco_evaluator.clear()
-
-            with test_summary_writer.as_default():
-              with tf.name_scope("loss_val"):
-                tf.summary.scalar('V Total loss', 
-                  valid_loss.result(), step=iterations)
-
-                tf.summary.scalar('V Loc loss', 
-                  v_loc.result(), step=iterations)
-
-                tf.summary.scalar('V Conf loss', 
-                  v_conf.result(), step=iterations)
-
-                tf.summary.scalar('V Mask loss', 
-                  v_mask.result(), step=iterations)
-
-                tf.summary.scalar('V Mask IOU loss', 
-                  v_mask_iou.result(), step=iterations)
-
-              with tf.name_scope("precision"):
-                tf.summary.scalar('Precision mAP', 
-                  precision_mAP.result(), step=iterations)
-
-                tf.summary.scalar('Precision mAP@.50IOU', 
-                  precision_mAP_50IOU.result(), step=iterations)
-
-                tf.summary.scalar('precision mAP@.75IOU', 
-                  precision_mAP_75IOU.result(), step=iterations)
-
-                tf.summary.scalar('precision mAP (small)', 
-                  precision_mAP_small.result(), step=iterations)
-
-                tf.summary.scalar('precision mAP (medium)', 
-                  precision_mAP_medium.result(), step=iterations)
-
-                tf.summary.scalar('precision mAP (large)', 
-                  precision_mAP_large.result(), step=iterations)
-
-              with tf.name_scope("recall"):
-                tf.summary.scalar('recall AR@1', 
-                  recall_AR_1.result(), step=iterations)
-
-                tf.summary.scalar('recall AR@10', 
-                  recall_AR_10.result(), step=iterations)
-
-                tf.summary.scalar('recall AR@100', 
-                  recall_AR_100.result(), step=iterations)
-
-                tf.summary.scalar('recall AR@100 (small)', 
-                  recall_AR_100_small.result(), step=iterations)
-
-                tf.summary.scalar('recall AR@100 (medium)', 
-                  recall_AR_100_medium.result(), step=iterations)
-
-                tf.summary.scalar('recall AR@100 (large)', 
-                  recall_AR_100_large.result(), step=iterations)
-
-            train_template = ("Iteration {}, Train Loss: {}, Loc Loss: {},  "
-              "Conf Loss: {}, Mask Loss: {}, Mask IOU Loss: {}, "
-              "Global Norm: {}")
-
-            valid_template = ("Iteration {}, Precision mAP: {}, Precision "
-              "mAP@.50IOU: {}, precision mAP@.75IOU: {}, precision mAP (small)"
-              ": {}, precision mAP (medium): {}, precision mAP (large): {}, "
-              " recall AR@1: {}, recall AR@10: {}, recall AR@100: {}, recall "
-              "AR@100 (small): {}, recall AR@100 (medium): {}, recall AR@100 "
-              "(large): {}\nValid Loss: {}, V Loc Loss: {},  "
-              "V Conf Loss: {}, V Mask Loss: {}, V Mask IOU Loss: {}")
-
-            logging.info(train_template.format(iterations + 1,
-                                        train_loss.result(),
-                                        loc.result(),
-                                        conf.result(),
-                                        mask.result(),
-                                        mask_iou.result(),
-                                        global_norm.result()))
-            logging.info(valid_template.format(iterations + 1,
-                                        precision_mAP.result(),
-                                        precision_mAP_50IOU.result(),
-                                        precision_mAP_75IOU.result(),
-                                        precision_mAP_small.result(),
-                                        precision_mAP_medium.result(),
-                                        precision_mAP_large.result(),
-                                        recall_AR_1.result(),
-                                        recall_AR_10.result(),
-                                        recall_AR_100.result(),
-                                        recall_AR_100_small.result(),
-                                        recall_AR_100_medium.result(),
-                                        recall_AR_100_large.result(),
-                                        valid_loss.result(),
-                                        v_loc.result(),
-                                        v_conf.result(),
-                                        v_mask.result(),
-                                        v_mask_iou.result()))
-            # reset the metrics
-            valid_loss.reset_states()
-            v_loc.reset_states()
-            v_conf.reset_states()
-            v_mask.reset_states()
-            v_mask_iou.reset_states()
-            precision_mAP.reset_states()
-            precision_mAP_50IOU.reset_states()
-            precision_mAP_75IOU.reset_states()
-            precision_mAP_small.reset_states()
-            precision_mAP_medium.reset_states()
-            precision_mAP_large.reset_states()
-            recall_AR_1.reset_states()
-            recall_AR_10.reset_states()
-            recall_AR_100.reset_states()
-            recall_AR_100_small.reset_states()
-            recall_AR_100_medium.reset_states()
-            recall_AR_100_large.reset_states()
-
+            metrics.reset()
 
 if __name__ == '__main__':
     app.run(main)

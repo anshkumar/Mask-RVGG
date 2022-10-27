@@ -70,7 +70,7 @@ class TfExampleDecoder(object):
         is_crowds = tf.cond(
             tf.greater(tf.shape(parsed_tensors['image/object/is_crowd']), 0),
             lambda: tf.cast(parsed_tensors['image/object/is_crowd'], dtype=tf.bool),
-            lambda: tf.zeros_like(parsed_tensors['image/object/class/label_id'], dtype=tf.bool))
+            lambda: tf.zeros_like(parsed_tensors['image/object/class/label'], dtype=tf.bool))
 
         decoded_tensors = {
             'image': image,

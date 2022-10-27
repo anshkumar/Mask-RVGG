@@ -3,6 +3,7 @@ import tensorflow as tf
 # from tensorflow.keras.applications import efficientnet_v2
 from tensorflow.keras import layers
 from backbone import efficientnet_v2
+from backbone import repVGG
 # from backbone import efficientnet_v2_ws_gn as efficientnet_v2
 from layers.biFPN import build_wBiFPN, build_BiFPN 
 from layers.fpn import build_FPN
@@ -32,9 +33,36 @@ class MaskED(tf.keras.Model):
                     'efficientnetv2s': efficientnet_v2.EfficientNetV2S, 
                     'efficientnetv2m': efficientnet_v2.EfficientNetV2M, 
                     'efficientnetv2l': efficientnet_v2.EfficientNetV2L,
-                    'resnet50': tf.keras.applications.resnet50.ResNet50}
+                    'resnet50': tf.keras.applications.resnet50.ResNet50,
+                    'repVGG-A0': repVGG.create_RepVGG_A0,
+                    'repVGG-A1': repVGG.create_RepVGG_A1,
+                    'repVGG-A2': repVGG.create_RepVGG_A2,
+                    'repVGG-B0': repVGG.create_RepVGG_B0,
+                    'repVGG-B1': repVGG.create_RepVGG_B1,
+                    'repVGG-B1g2': repVGG.create_RepVGG_B1g2,
+                    'repVGG-B1g4': repVGG.create_RepVGG_B1g4,
+                    'repVGG-B2': repVGG.create_RepVGG_B2,
+                    'repVGG-B2g2': repVGG.create_RepVGG_B2g2,
+                    'repVGG-B2g4': repVGG.create_RepVGG_B2g4,
+                    'repVGG-B3': repVGG.create_RepVGG_B3,
+                    'repVGG-B3g2': repVGG.create_RepVGG_B3g2,
+                    'repVGG-B3g4': repVGG.create_RepVGG_B3g4,
+                    }
         out_layers = {'efficientnetv2b0': ['block3b_add','block5e_add','block6h_add'],
-                      'resnet50': ['conv3_block4_out', 'conv4_block6_out', 'conv5_block3_out']
+                        'resnet50': ['conv3_block4_out', 'conv4_block6_out', 'conv5_block3_out'],
+                        'repVGG-A0': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-A1': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-A2': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B0': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B1': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B1g2': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B1g4': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B2': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B2g2': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B2g4': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B3': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B3g2': ['stage2', 'stage3', 'stage4'],
+                        'repVGG-B3g4': ['stage2', 'stage3', 'stage4']
                     }
 
         if config.BACKBONE in ['resnet50']:
@@ -43,6 +71,13 @@ class MaskED(tf.keras.Model):
                             weights='imagenet',
                             input_shape=config.IMAGE_SHAPE,
                         )
+            outputs=[base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
+        elif config.BACKBONE in ['repVGG-A0', 'repVGG-A1', 'repVGG-A2', 'repVGG-B0', 'repVGG-B1', 'repVGG-B1g2', 'repVGG-B1g4', 'repVGG-B2', 'repVGG-B2g2', 'repVGG-B2g4', 'repVGG-B3', 'repVGG-B3g2', 'repVGG-B3g4']:
+            base_model = backbones[config.BACKBONE](
+                            input_shape=config.IMAGE_SHAPE,
+                            include_preprocessing=True,
+                            include_top=False,)
+            outputs=base_model.output
         else:
             base_model = backbones[config.BACKBONE](
                                 include_top=False,
@@ -50,6 +85,7 @@ class MaskED(tf.keras.Model):
                                 input_shape=config.IMAGE_SHAPE,
                                 include_preprocessing=True
                             )
+            outputs=[base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
 
         # whether to freeze the convolutional base
         base_model.trainable = config.BASE_MODEL_TRAINABLE 
@@ -60,7 +96,7 @@ class MaskED(tf.keras.Model):
               if isinstance(layer, tf.keras.layers.BatchNormalization):
                 layer.trainable = False
 
-        outputs=[base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
+        
         if not config.USE_FPN:
             if config.WEIGHTED_BIFPN:
                 fpn_features = [None, None]+outputs

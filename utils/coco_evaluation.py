@@ -14,6 +14,63 @@ def convert_masks_to_binary(masks):
   """Converts masks to 0 or 1 and uint8 type."""
   return (masks > 0).astype(np.uint8)
   
+class Matric:
+  def __init__(self):
+    self.train_loss = tf.keras.metrics.Mean('train_loss', dtype=tf.float32)
+    self.valid_loss = tf.keras.metrics.Mean('valid_loss', dtype=tf.float32)
+    self.loc = tf.keras.metrics.Mean('loc_loss', dtype=tf.float32)
+    self.conf = tf.keras.metrics.Mean('conf_loss', dtype=tf.float32)
+    self.mask = tf.keras.metrics.Mean('mask_loss', dtype=tf.float32)
+    self.mask_iou = tf.keras.metrics.Mean('mask_iou_loss', dtype=tf.float32)
+    self.v_loc = tf.keras.metrics.Mean('vloc_loss', dtype=tf.float32)
+    self.v_conf = tf.keras.metrics.Mean('vconf_loss', dtype=tf.float32)
+    self.v_mask = tf.keras.metrics.Mean('vmask_loss', dtype=tf.float32)
+    self.v_mask_iou = tf.keras.metrics.Mean('vmask_iou_loss', dtype=tf.float32)
+    self.global_norm = tf.keras.metrics.Mean('global_norm', dtype=tf.float32)
+    self.precision_mAP = tf.keras.metrics.Mean('precision_mAP', dtype=tf.float32)
+    self.precision_mAP_50IOU = tf.keras.metrics.Mean('precision_mAP_50IOU', 
+      dtype=tf.float32)
+    self.precision_mAP_75IOU = tf.keras.metrics.Mean('precision_mAP_75IOU', 
+      dtype=tf.float32)
+    self.precision_mAP_small = tf.keras.metrics.Mean('precision_mAP_small', 
+      dtype=tf.float32)
+    self.precision_mAP_medium = tf.keras.metrics.Mean('precision_mAP_medium', 
+      dtype=tf.float32)
+    self.precision_mAP_large = tf.keras.metrics.Mean('precision_mAP_large', 
+      dtype=tf.float32)
+    self.recall_AR_1 = tf.keras.metrics.Mean('recall_AR_1', 
+      dtype=tf.float32)
+    self.recall_AR_10 = tf.keras.metrics.Mean('recall_AR_10', 
+      dtype=tf.float32)
+    self.recall_AR_100 = tf.keras.metrics.Mean('recall_AR_100', 
+      dtype=tf.float32)
+    self.recall_AR_100_small = tf.keras.metrics.Mean('recall_AR_100_small', 
+      dtype=tf.float32)
+    self.recall_AR_100_medium = tf.keras.metrics.Mean('recall_AR_100_medium', 
+      dtype=tf.float32)
+    self.recall_AR_100_large = tf.keras.metrics.Mean('recall_AR_100_large', 
+      dtype=tf.float32)
+  
+  def reset(self):
+    # reset the metrics
+    metrics.valid_loss.reset_states()
+    metrics.v_loc.reset_states()
+    metrics.v_conf.reset_states()
+    metrics.v_mask.reset_states()
+    metrics.v_mask_iou.reset_states()
+    metrics.precision_mAP.reset_states()
+    metrics.precision_mAP_50IOU.reset_states()
+    metrics.precision_mAP_75IOU.reset_states()
+    metrics.precision_mAP_small.reset_states()
+    metrics.precision_mAP_medium.reset_states()
+    metrics.precision_mAP_large.reset_states()
+    metrics.recall_AR_1.reset_states()
+    metrics.recall_AR_10.reset_states()
+    metrics.recall_AR_100.reset_states()
+    metrics.recall_AR_100_small.reset_states()
+    metrics.recall_AR_100_medium.reset_states()
+    metrics.recall_AR_100_large.reset_states()
+
 class CocoDetectionEvaluator():
   """Class to evaluate COCO detection metrics."""
 
