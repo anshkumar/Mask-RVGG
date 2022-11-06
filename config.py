@@ -3,8 +3,6 @@ EMaskRCNN_V2
 Base Configurations class.
 """
 
-import numpy as np
-
 class Config(object):
     """Base configuration class. For custom configurations, create a
     sub-class that inherits from this one and override properties
