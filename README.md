@@ -1,4 +1,4 @@
-# MaskED Real-time Instance Segmentation
+# Mask-RVGG Real-time Instance Segmentation
 In development <br/>
 
 # Installation
