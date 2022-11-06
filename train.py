@@ -11,7 +11,7 @@ from absl import app
 from absl import flags
 from absl import logging
 import os
-from model import MaskED
+from model import MaskRVGG
 from data import dataset_coco
 from loss import loss
 from utils import learning_rate_schedule
@@ -558,7 +558,7 @@ def main(argv):
 
     if FLAGS.multi_gpu:
         with mirrored_strategy.scope():
-            model = MaskED(config)
+            model = MaskRVGG(config)
             add_weight_decay(model, config.WEIGHT_DECAY)   
             optimizer = get_optimizer(config)
             checkpoint, manager = get_checkpoint_manager(model, optimizer)
@@ -566,7 +566,7 @@ def main(argv):
         global_batch_size = (BATCH_SIZE_PER_REPLICA *
                         mirrored_strategy.num_replicas_in_sync)
     else:
-        model = MaskED(config)
+        model = MaskRVGG(config)
         add_weight_decay(model, config.WEIGHT_DECAY)   
         optimizer = get_optimizer(config)
         checkpoint, manager = get_checkpoint_manager(model, optimizer)

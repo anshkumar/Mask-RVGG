@@ -1,38 +1,24 @@
 import tensorflow as tf
-
-# from tensorflow.keras.applications import efficientnet_v2
-from tensorflow.keras import layers
-from backbone import efficientnet_v2
 from backbone import repVGG
-# from backbone import efficientnet_v2_ws_gn as efficientnet_v2
-from layers.biFPN import build_wBiFPN, build_BiFPN 
 from layers.fpn import build_FPN
-from layers.boxNet import BoxNet
-from layers.classNet import ClassNet
 from layers.maskNet import MaskHead
-from layers.head import PredictionModule, FastMaskIoUNet
+from layers.head import PredictionModule
 assert tf.__version__.startswith('2')
 from detection import Detect
 from data import anchor
 import numpy as np
 
-class MaskED(tf.keras.Model):
+class MaskRVGG(tf.keras.Model):
     """
-        Creating the MaskED Architecture
+        Creating the Mask-RVGG Architecture
         Arguments:
 
     """
 
     def __init__(self, config, base_model=None, deploy=False):
-        super(MaskED, self).__init__()
+        super(MaskRVGG, self).__init__()
 
-        backbones = {'efficientnetv2b0': efficientnet_v2.EfficientNetV2B0, 
-                    'efficientnetv2b1': efficientnet_v2.EfficientNetV2B1, 
-                    'efficientnetv2b2': efficientnet_v2.EfficientNetV2B2, 
-                    'efficientnetv2b3': efficientnet_v2.EfficientNetV2B3, 
-                    'efficientnetv2s': efficientnet_v2.EfficientNetV2S, 
-                    'efficientnetv2m': efficientnet_v2.EfficientNetV2M, 
-                    'efficientnetv2l': efficientnet_v2.EfficientNetV2L,
+        backbones = {
                     'resnet50': tf.keras.applications.resnet50.ResNet50,
                     'repVGG-A0': repVGG.create_RepVGG_A0,
                     'repVGG-A1': repVGG.create_RepVGG_A1,
@@ -48,7 +34,7 @@ class MaskED(tf.keras.Model):
                     'repVGG-B3g2': repVGG.create_RepVGG_B3g2,
                     'repVGG-B3g4': repVGG.create_RepVGG_B3g4,
                     }
-        out_layers = {'efficientnetv2b0': ['block3b_add','block5e_add','block6h_add'],
+        out_layers = {
                         'resnet50': ['conv3_block4_out', 'conv4_block6_out', 'conv5_block3_out'],
                         'repVGG-A0': ['stage2', 'stage3', 'stage4'],
                         'repVGG-A1': ['stage2', 'stage3', 'stage4'],
@@ -72,7 +58,7 @@ class MaskED(tf.keras.Model):
                             input_shape=config.IMAGE_SHAPE,
                         )
             outputs=[self.base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
-        elif config.BACKBONE in ['repVGG-A0', 'repVGG-A1', 'repVGG-A2', 'repVGG-B0', 'repVGG-B1', 'repVGG-B1g2', 'repVGG-B1g4', 'repVGG-B2', 'repVGG-B2g2', 'repVGG-B2g4', 'repVGG-B3', 'repVGG-B3g2', 'repVGG-B3g4']:
+        else:
             if deploy:
                 self.base_model = backbones[config.BACKBONE](
                                 input_shape=config.IMAGE_SHAPE,
@@ -103,14 +89,6 @@ class MaskED(tf.keras.Model):
                                 include_preprocessing=True,
                                 include_top=False,)
             outputs=self.base_model.output
-        else:
-            self.base_model = backbones[config.BACKBONE](
-                                include_top=False,
-                                weights='imagenet',
-                                input_shape=config.IMAGE_SHAPE,
-                                include_preprocessing=True
-                            )
-            outputs=[self.base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
 
         # whether to freeze the convolutional base
         self.base_model.trainable = config.BASE_MODEL_TRAINABLE 
@@ -121,18 +99,7 @@ class MaskED(tf.keras.Model):
               if isinstance(layer, tf.keras.layers.BatchNormalization):
                 layer.trainable = False
 
-        
-        if not config.USE_FPN:
-            if config.WEIGHTED_BIFPN:
-                self.fpn_features = [None, None]+outputs
-                for i in range(config.D_BIFPN):
-                    self.fpn_features = build_wBiFPN(self.fpn_features, config.W_BIFPN, i)
-            else:
-                self.fpn_features = [None, None]+outputs
-                for i in range(config.D_BIFPN):
-                    self.fpn_features = build_BiFPN(self.fpn_features, config.W_BIFPN, i)
-        else:
-            self.fpn_features = build_FPN(outputs, config.FPN_FEATURE_MAP_SIZE)
+        self.fpn_features = build_FPN(outputs, config.FPN_FEATURE_MAP_SIZE)
         
         # extract certain feature maps for FPN
         self.backbone = tf.keras.Model(inputs=self.base_model.input,
@@ -162,14 +129,8 @@ class MaskED(tf.keras.Model):
                               aspect_ratio=config.ANCHOR_RATIOS,
                               scale=config.ANCHOR_SCALES)
 
-        if not config.USE_FPN:
-            self.box_net = BoxNet(config.W_BIFPN, config.D_HEAD, num_anchors=9, separable_conv=config.SEPARABLE_CONV, freeze_bn=config.FPN_FREEZE_BN,
-                         detect_quadrangle=config.DETECT_QUADRANGLE, name='box_net')
-            self.class_net = ClassNet(config.W_BIFPN, config.D_HEAD, num_classes=config.NUM_CLASSES+1, num_anchors=9,
-                                 separable_conv=config.SEPARABLE_CONV, freeze_bn=config.FPN_FREEZE_BN, 
-                                 activation=config.ACTIVATION, name='class_net')
-        else:
-            self.predictionHead = PredictionModule(config.FPN_FEATURE_MAP_SIZE, 9, config.NUM_CLASSES+1)
+
+        self.predictionHead = PredictionModule(config.FPN_FEATURE_MAP_SIZE, 9, config.NUM_CLASSES+1)
 
         self.num_anchors = anchorobj.num_anchors
         self.priors = anchorobj.anchors
@@ -191,24 +152,18 @@ class MaskED(tf.keras.Model):
 
         features = self.backbone(inputs, training=False)
         
-        if not self.config.USE_FPN:
-            classification = self.class_net(features)
-            classification = layers.Concatenate(axis=1, name='classification')(classification)
-            regression = self.box_net(features)
-            regression = layers.Concatenate(axis=1, name='regression')(regression)
-        else:
-            # Prediction Head branch
-            pred_cls = []
-            pred_offset = []
+        # Prediction Head branch
+        pred_cls = []
+        pred_offset = []
 
-            # all output from FPN use same prediction head
-            for f_map in features:
-                cls, offset = self.predictionHead(f_map)
-                pred_cls.append(cls)
-                pred_offset.append(offset)
-                
-            classification = tf.concat(pred_cls, axis=1)
-            regression = tf.concat(pred_offset, axis=1)
+        # all output from FPN use same prediction head
+        for f_map in features:
+            cls, offset = self.predictionHead(f_map)
+            pred_cls.append(cls)
+            pred_offset.append(offset)
+            
+        classification = tf.concat(pred_cls, axis=1)
+        regression = tf.concat(pred_offset, axis=1)
 
         pred = {
             'regression': regression,

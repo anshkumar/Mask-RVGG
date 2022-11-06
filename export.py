@@ -1,7 +1,6 @@
 import tensorflow as tf
 from model import MaskED
 from config import Config
-from tensorflow.keras import layers
 
 class Model(MaskED):
     def __init__(self, config, base_model=None, deploy=False):
@@ -12,22 +11,17 @@ class Model(MaskED):
         if self.config.BACKBONE == 'resnet50':
             inputs = tf.keras.applications.resnet50.preprocess_input(inputs)
         features = self.backbone(inputs, training=False)
-        if not self.config.USE_FPN:
-            classification = self.class_net(features)
-            classification = layers.Concatenate(axis=1, name='classification')(classification)
-            regression = self.box_net(features)
-            regression = layers.Concatenate(axis=1, name='regression')(regression)
-        else:
-            # Prediction Head branch
-            pred_cls = []
-            pred_offset = []
-            # all output from FPN use same prediction head
-            for f_map in features:
-                cls, offset = self.predictionHead(f_map)
-                pred_cls.append(cls)
-                pred_offset.append(offset)
-            classification = tf.concat(pred_cls, axis=1)
-            regression = tf.concat(pred_offset, axis=1)
+
+        # Prediction Head branch
+        pred_cls = []
+        pred_offset = []
+        # all output from FPN use same prediction head
+        for f_map in features:
+            cls, offset = self.predictionHead(f_map)
+            pred_cls.append(cls)
+            pred_offset.append(offset)
+        classification = tf.concat(pred_cls, axis=1)
+        regression = tf.concat(pred_offset, axis=1)
         pred = {
             'regression': regression,
             'classification': classification,
