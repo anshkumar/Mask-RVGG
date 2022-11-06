@@ -20,7 +20,7 @@ flags.DEFINE_string('out_dir', './out',
                     'Output image dir.')
 flags.DEFINE_string('label_map', './label_map.pbtxt',
                     'path to label_map.pbtxt')
-flags.DEFINE_string('output_json', './detections_test-dev2017_masked_results.json',
+flags.DEFINE_string('output_json', './detections_test-dev2017_maskrvgg_results.json',
                     'json_output_path to save in the format used by MS COCO')
 flags.DEFINE_string('saved_model_dir', None,
                     'saved_model directory containg inference model')
@@ -122,7 +122,7 @@ def main(argv):
             _h = image_org.shape[0]
             _w = image_org.shape[1]
 
-            det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.15)
+            det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.05)
             det_boxes = output['detection_boxes'][0][:det_num]
             det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
             if IS_MASK:

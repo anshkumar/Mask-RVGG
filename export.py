@@ -1,8 +1,8 @@
 import tensorflow as tf
-from model import MaskED
+from model import MaskRVGG
 from config import Config
 
-class Model(MaskED):
+class Model(MaskRVGG):
     def __init__(self, config, base_model=None, deploy=False):
         super(Model, self).__init__(config, base_model, deploy)
 
@@ -44,6 +44,7 @@ model = Model(config)
 checkpoint = tf.train.Checkpoint(model=model)
 status = checkpoint.restore('checkpoints/ckpt-114').expect_partial()
 train_y = model(test_inp, training=False)
+# model.save('saved_models')
 
 deploy_model = Model(config, base_model=model, deploy=True)
 checkpoint = tf.train.Checkpoint(model=deploy_model)
