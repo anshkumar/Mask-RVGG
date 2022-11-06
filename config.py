@@ -44,7 +44,7 @@ class Config(object):
     # Size of the top-down layers used to build the feature pyramid
     TOP_DOWN_PYRAMID_SIZE = 256
 
-    PREDICT_MASK = False
+    PREDICT_MASK = True
     # Pooled ROIs
     MASK_POOL_SIZE = 14
 

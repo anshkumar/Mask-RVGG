@@ -42,13 +42,13 @@ test_inp = tf.random.uniform(shape=[16,512,512,3], minval=0, maxval=255, dtype=t
 config = Config()
 model = Model(config)
 checkpoint = tf.train.Checkpoint(model=model)
-status = checkpoint.restore('checkpoints/ckpt-114').expect_partial()
+status = checkpoint.restore('checkpoints_map28/ckpt-114').expect_partial()
 train_y = model(test_inp, training=False)
 # model.save('saved_models')
 
 deploy_model = Model(config, base_model=model, deploy=True)
 checkpoint = tf.train.Checkpoint(model=deploy_model)
-status = checkpoint.restore('checkpoints/ckpt-114').expect_partial()
+status = checkpoint.restore('checkpoints_map28/ckpt-114').expect_partial()
 
 deploy_y = deploy_model(test_inp, training=False)
 
