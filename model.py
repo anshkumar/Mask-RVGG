@@ -23,7 +23,7 @@ class MaskED(tf.keras.Model):
 
     """
 
-    def __init__(self, config):
+    def __init__(self, config, base_model=None, deploy=False):
         super(MaskED, self).__init__()
 
         backbones = {'efficientnetv2b0': efficientnet_v2.EfficientNetV2B0, 
@@ -66,52 +66,77 @@ class MaskED(tf.keras.Model):
                     }
 
         if config.BACKBONE in ['resnet50']:
-            base_model = backbones[config.BACKBONE](
+            self.base_model = backbones[config.BACKBONE](
                             include_top=False,
                             weights='imagenet',
                             input_shape=config.IMAGE_SHAPE,
                         )
-            outputs=[base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
+            outputs=[self.base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
         elif config.BACKBONE in ['repVGG-A0', 'repVGG-A1', 'repVGG-A2', 'repVGG-B0', 'repVGG-B1', 'repVGG-B1g2', 'repVGG-B1g4', 'repVGG-B2', 'repVGG-B2g2', 'repVGG-B2g4', 'repVGG-B3', 'repVGG-B3g2', 'repVGG-B3g4']:
-            base_model = backbones[config.BACKBONE](
-                            input_shape=config.IMAGE_SHAPE,
-                            include_preprocessing=True,
-                            include_top=False,)
-            outputs=base_model.output
+            if deploy:
+                self.base_model = backbones[config.BACKBONE](
+                                input_shape=config.IMAGE_SHAPE,
+                                include_preprocessing=True,
+                                include_top=False,
+                                deploy=True)
+
+                for layer, deploy_layer in zip(base_model.base_model.layers, self.base_model.layers):
+                    if hasattr(layer, "repvgg_convert"):
+                        kernel, bias = layer.repvgg_convert()
+                        deploy_layer.rbr_reparam.set_weights([kernel, bias])
+                    elif isinstance(layer, tf.keras.Sequential):
+                        assert isinstance(deploy_layer, tf.keras.Sequential)
+                        for sub_layer, deploy_sub_layer in zip(
+                            layer.layers, deploy_layer.layers
+                        ):
+                            kernel, bias = sub_layer.repvgg_convert()
+                            deploy_sub_layer.rbr_reparam.set_weights(
+                                [kernel, bias]
+                            )
+                    elif isinstance(layer, tf.keras.layers.Dense):
+                        assert isinstance(deploy_layer, tf.keras.layers.Dense)
+                        weights = layer.get_weights()
+                        deploy_layer.set_weights(weights)
+            else:
+                self.base_model = backbones[config.BACKBONE](
+                                input_shape=config.IMAGE_SHAPE,
+                                include_preprocessing=True,
+                                include_top=False,)
+            outputs=self.base_model.output
         else:
-            base_model = backbones[config.BACKBONE](
+            self.base_model = backbones[config.BACKBONE](
                                 include_top=False,
                                 weights='imagenet',
                                 input_shape=config.IMAGE_SHAPE,
                                 include_preprocessing=True
                             )
-            outputs=[base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
+            outputs=[self.base_model.get_layer(x).output for x in out_layers[config.BACKBONE]]
 
         # whether to freeze the convolutional base
-        base_model.trainable = config.BASE_MODEL_TRAINABLE 
+        self.base_model.trainable = config.BASE_MODEL_TRAINABLE 
 
         # Freeze BatchNormalization in pre-trained backbone
         if config.FREEZE_BACKBONE_BN:
-          for layer in base_model.layers:
+          for layer in self.base_model.layers:
               if isinstance(layer, tf.keras.layers.BatchNormalization):
                 layer.trainable = False
 
         
         if not config.USE_FPN:
             if config.WEIGHTED_BIFPN:
-                fpn_features = [None, None]+outputs
+                self.fpn_features = [None, None]+outputs
                 for i in range(config.D_BIFPN):
-                    fpn_features = build_wBiFPN(fpn_features, config.W_BIFPN, i)
+                    self.fpn_features = build_wBiFPN(self.fpn_features, config.W_BIFPN, i)
             else:
-                fpn_features = [None, None]+outputs
+                self.fpn_features = [None, None]+outputs
                 for i in range(config.D_BIFPN):
-                    fpn_features = build_BiFPN(fpn_features, config.W_BIFPN, i)
+                    self.fpn_features = build_BiFPN(self.fpn_features, config.W_BIFPN, i)
         else:
-            fpn_features = build_FPN(outputs, config.FPN_FEATURE_MAP_SIZE)
+            self.fpn_features = build_FPN(outputs, config.FPN_FEATURE_MAP_SIZE)
         
         # extract certain feature maps for FPN
-        self.backbone = tf.keras.Model(inputs=base_model.input,
-                                       outputs=fpn_features)
+        self.backbone = tf.keras.Model(inputs=self.base_model.input,
+                                       outputs=self.fpn_features)
 
         self.mask_head = MaskHead(config)
 
@@ -120,7 +145,7 @@ class MaskED(tf.keras.Model):
         # https://github.com/tensorflow/tensorflow/issues/4297#issuecomment-\
         # 246080982
         self.feature_map_size = np.array(
-            [list(base_model.get_layer(x).output.shape[1:3]) for x in out_layers[config.BACKBONE]])
+            [list(self.base_model.get_layer(x).output.shape[1:3]) for x in out_layers[config.BACKBONE]])
         out_height_p6 = np.ceil(
             (self.feature_map_size[-1, 0]).astype(np.float32) / float(2))
         out_width_p6  = np.ceil(

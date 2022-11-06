@@ -4,9 +4,9 @@ from config import Config
 from tensorflow.keras import layers
 
 class Model(MaskED):
-    def __init__(self, config):
-        super(Model, self).__init__(config)
-    
+    def __init__(self, config, base_model=None, deploy=False):
+        super(Model, self).__init__(config, base_model, deploy)
+
     @tf.function()
     def call(self, inputs, training=False):
         if self.config.BACKBONE == 'resnet50':
@@ -43,11 +43,18 @@ class Model(MaskED):
             pred.update({'detection_masks': masks})
         return pred
 
+test_inp = tf.random.uniform(shape=[16,512,512,3], minval=0, maxval=255, dtype=tf.float32)
+
 config = Config()
 model = Model(config)
-# model.call = call
 checkpoint = tf.train.Checkpoint(model=model)
-status = checkpoint.restore('checkpoints/ckpt-1')
+status = checkpoint.restore('checkpoints/ckpt-114').expect_partial()
+train_y = model(test_inp, training=False)
 
-_ = model(tf.random.uniform(shape=[16,512,512,3], minval=0, maxval=255, dtype=tf.float32), training=False)
-model.save('test')
+deploy_model = Model(config, base_model=model, deploy=True)
+checkpoint = tf.train.Checkpoint(model=deploy_model)
+status = checkpoint.restore('checkpoints/ckpt-114').expect_partial()
+
+deploy_y = deploy_model(test_inp, training=False)
+
+deploy_model.save('saved_models')

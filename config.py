@@ -15,9 +15,9 @@ class Config(object):
     #         efficientnetv2b3, efficientnetv2b4, efficientnetv2b5, efficientnetv2b6
     #		  efficientnetv2s, efficientnetv2m, efficientnetv2l,
     #         resnet50
-    BACKBONE = "efficientnetv2b0"
+    BACKBONE = "repVGG-B3g4"
     BASE_MODEL_TRAINABLE = True
-    FREEZE_BACKBONE_BN = True
+    FREEZE_BACKBONE_BN = False
 
     BATCH_SIZE = 16 # Batch size per GPU
     # (Height, Width, Channels)
@@ -33,7 +33,7 @@ class Config(object):
     ANCHOR_SCALES = [[24.0, 30.238105197476955, 38.097625247236785], [48.0, 60.47621039495391, 76.19525049447357], [96.0, 120.95242078990782, 152.39050098894714], [192.0, 241.90484157981564, 304.7810019778943], [384.0, 483.8096831596313, 609.5620039557886]]
 
     # Weather to use FPN or BiFPN
-    USE_FPN = False
+    USE_FPN = True
     FPN_FEATURE_MAP_SIZE = 256
 
     # BiFPN settings
@@ -68,7 +68,7 @@ class Config(object):
     # Size of the top-down layers used to build the feature pyramid
     TOP_DOWN_PYRAMID_SIZE = 256
 
-    PREDICT_MASK = True
+    PREDICT_MASK = False
     # Pooled ROIs
     MASK_POOL_SIZE = 14
 
@@ -107,8 +107,8 @@ class Config(object):
     WARMUP_LR = 0.0
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
-    TRAIN_ITER = 88716
-    LR_TOTAL_STEPS = 88716
+    TRAIN_ITER = 800000 #88716 # 1x
+    LR_TOTAL_STEPS = 800000 #88716
 
     # Weight decay regularization
     WEIGHT_DECAY = 1e-4 # 5*1e-4

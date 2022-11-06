@@ -8,6 +8,7 @@ from protos import string_int_label_map_pb2
 import json
 from absl import app
 from absl import flags
+import time
 
 FLAGS = flags.FLAGS
 
@@ -23,7 +24,7 @@ flags.DEFINE_string('output_json', './detections_test-dev2017_masked_results.jso
                     'json_output_path to save in the format used by MS COCO')
 flags.DEFINE_string('saved_model_dir', None,
                     'saved_model directory containg inference model')
-IS_MASK = True
+IS_MASK = False
 
 def _validate_label_map(label_map):
   # https://github.com/tensorflow/models/blob/
@@ -115,12 +116,13 @@ def main(argv):
             image = cv2.resize(image_org, (512, 512))
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             image = image.astype(np.float32)
+            tic = time.time()
             output = infer(input_1=tf.constant(image[None, ...]))
-
+            print('fps: ', round(1/(time.time() - tic)))
             _h = image_org.shape[0]
             _w = image_org.shape[1]
 
-            det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.05)
+            det_num = np.count_nonzero(output['detection_scores'][0].numpy()> 0.15)
             det_boxes = output['detection_boxes'][0][:det_num]
             det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
             if IS_MASK:

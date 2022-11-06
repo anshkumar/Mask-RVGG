@@ -620,7 +620,6 @@ def main(argv):
     best_val = 1e10
     iterations = checkpoint.step.numpy()
 
-    @tf.function
     def train_step(image, labels):
         clip_factor=0.01
         eps=1e-3
