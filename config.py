@@ -11,10 +11,7 @@ class Config(object):
     that need to be changed.
     """
     # Backbone network architecture
-    # Supported values are: efficientnetv2b0, efficientnetv2b1, efficientnetv2b2,
-    #         efficientnetv2b3, efficientnetv2b4, efficientnetv2b5, efficientnetv2b6
-    #		  efficientnetv2s, efficientnetv2m, efficientnetv2l,
-    #         resnet50
+    # Supported values are: 'resnet50', 'repVGG-A0', 'repVGG-A1', 'repVGG-A2', 'repVGG-B0', 'repVGG-B1', 'repVGG-B1g2', 'repVGG-B1g4', 'repVGG-B2', 'repVGG-B2g2', 'repVGG-B2g4', 'repVGG-B3', 'repVGG-B3g2', 'repVGG-B3g4'
     BACKBONE = "repVGG-B3g4"
     BASE_MODEL_TRAINABLE = True
     FREEZE_BACKBONE_BN = False
@@ -32,27 +29,8 @@ class Config(object):
     # ANCHOR_SCALES = [list(i*np.array([2 ** 0, 2 ** (1. / 3.), 2 ** (2. / 3.)])) for i in [16, 32, 64, 128, 256]]
     ANCHOR_SCALES = [[24.0, 30.238105197476955, 38.097625247236785], [48.0, 60.47621039495391, 76.19525049447357], [96.0, 120.95242078990782, 152.39050098894714], [192.0, 241.90484157981564, 304.7810019778943], [384.0, 483.8096831596313, 609.5620039557886]]
 
-    # Weather to use FPN or BiFPN
-    USE_FPN = True
+    # Weather to use FPN 
     FPN_FEATURE_MAP_SIZE = 256
-
-    # BiFPN settings
-    # [64, 88, 112, 160, 224, 288, 384]
-    W_BIFPN = 64
-
-    # [3, 4, 5, 6, 7, 7, 8]
-    D_BIFPN = 3
-
-    # [3, 3, 3, 4, 4, 4, 5]
-    D_HEAD = 3
-
-    WEIGHTED_BIFPN = True
-
-    FPN_FREEZE_BN = False
-
-    SEPARABLE_CONV = True
-
-    DETECT_QUADRANGLE = False
 
     # Number of classification classes (excluding background)
     NUM_CLASSES = 90  # Override in sub-classes
