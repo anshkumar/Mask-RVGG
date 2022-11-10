@@ -36,6 +36,7 @@ class Config(object):
     MAX_OUTPUT_SIZE = 100
     PER_CLASS_MAX_OUTPUT_SIZE = 100
     CONF_THRESH = 0.05
+    TRAD_NMS = False
     NMS_THRESH = 0.5
 
     # Maximum number of ground truth instances to use in one image
@@ -65,6 +66,7 @@ class Config(object):
         "loss_weight_mask": 1.,
         "loss_weight_mask_iou": 1.,
     }
+    INCLUDE_VARIANCES = True # Include variance to bounding boxes or not.
 
     # Allowed are : ['OHEM', 'FOCAL', 'CROSSENTROPY']
     LOSS_CLASSIFICATION = 'OHEM'
@@ -83,8 +85,8 @@ class Config(object):
     WARMUP_LR = 0.0
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
-    TRAIN_ITER = 800000 #88716 # 1x
-    LR_TOTAL_STEPS = 800000 #88716
+    TRAIN_ITER = 800000
+    LR_TOTAL_STEPS = 800000
 
     # Weight decay regularization
     WEIGHT_DECAY = 1e-4 # 5*1e-4
@@ -95,6 +97,29 @@ class Config(object):
 
     MATCH_THRESHOLD = 0.5
     UNMATCHED_THRESHOLD = 0.5
+
+    '''
+     Supported Augmetations:
+        "RANDOM_ROTATE"
+        "ROTATION90"
+        "VERTICAL_FLIP"
+        "BRIGHTNESS"
+        "PHOTOMETRIC"
+        "ABSOLUTE_PAD_IMAGE"
+        "CROP_IMAGE"
+        "HORIZONTAL_FLIP"
+        "SQUARE_CROP_BY_SCALE"
+    '''
+    AUGMENTATIONS = [
+        "BRIGHTNESS"
+        "PHOTOMETRIC"
+        "ABSOLUTE_PAD_IMAGE"
+        "CROP_IMAGE"
+        "HORIZONTAL_FLIP"
+    ]
+
+    IGNORE_SMALL_BBOX = True
+    SMALL_BBOX_AREA = 4
 
     def to_dict(self):
         return {a: getattr(self, a)

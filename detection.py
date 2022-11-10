@@ -10,7 +10,7 @@ class Detect(object):
     confidence score and locations, as the predicted masks.
     """
 
-    def __init__(self, num_classes, max_output_size, per_class_max_output_size, conf_thresh, nms_thresh):
+    def __init__(self, num_classes, max_output_size, per_class_max_output_size, conf_thresh, nms_thresh, include_variances):
         self.num_classes = num_classes
         # Parameters used in nms.
         self.nms_thresh = nms_thresh
@@ -19,9 +19,10 @@ class Detect(object):
         self.conf_thresh = conf_thresh
         self.max_output_size = max_output_size
         self.per_class_max_output_size = per_class_max_output_size
+        self.include_variances = include_variances
 
     @tf.function
-    def __call__(self, net_outs, trad_nms=False, use_cropped_mask=True):
+    def __call__(self, net_outs, trad_nms=False):
         """
         Args:
              pred_offset: (tensor) Loc preds from loc layers
@@ -69,7 +70,7 @@ class Detect(object):
             raw_anchors = tf.boolean_mask(anchors, class_p_max[b] > self.conf_thresh)
 
             # decode only selected boxes
-            boxes = utils._decode(raw_boxes, raw_anchors)
+            boxes = utils._decode(raw_boxes, raw_anchors, include_variances=self.include_variances)
 
             if tf.size(class_thre) > 0:
                 if not trad_nms:

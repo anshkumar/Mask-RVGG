@@ -69,7 +69,7 @@ class Anchor(object):
 
         return anchors_yxyx
 
-    def matching(self, pos_thresh, neg_thresh, gt_bbox, gt_labels):
+    def matching(self, pos_thresh, neg_thresh, gt_bbox, gt_labels, config):
         # size: [num_objects, num_priors]; anchors along the row and 
         # ground_truth clong the columns
 
@@ -125,6 +125,6 @@ class Anchor(object):
             tf.zeros(tf.size(background_label_index), dtype=tf.int64))
 
         # anchors and each_prior_box in [y1, x1, y2, x2]
-        offsets = utils._encode(each_prior_box, self.anchors)
+        offsets = utils._encode(each_prior_box, self.anchors, include_variances=config.INCLUDE_VARIANCES)
 
         return offsets, conf, each_prior_box, each_prior_index

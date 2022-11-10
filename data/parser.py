@@ -67,7 +67,7 @@ class Parser(object):
         if augment:
             image, boxes, masks, classes = augmentation.random_augmentation(
                 image, boxes, masks, [self._output_size_h, self._output_size_w],
-                classes)
+                classes, self.config)
 
         image = tf.image.resize(image, 
             [self._output_size_h, self._output_size_w])
@@ -91,7 +91,7 @@ class Parser(object):
         # matching anchors
         all_offsets, conf_gt, prior_max_box, prior_max_index = \
         self._anchor_instance.matching(
-            self._match_threshold, self._unmatched_threshold, boxes_norm, classes)
+            self._match_threshold, self._unmatched_threshold, boxes_norm, classes, self.config)
 
         # number of object in training sample
         num_obj = tf.size(classes)

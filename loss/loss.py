@@ -5,7 +5,7 @@ from utils import utils
 class Loss(object):
     def __init__(self, config):
         self.img_h = config.IMAGE_SHAPE[0]
-        self.img_w = config.IMAGE_SHAPE[0]
+        self.img_w = config.IMAGE_SHAPE[1]
         self._loss_weight_cls = config.LOSS_WEIGHTS['loss_weight_cls']
         self._loss_weight_box = config.LOSS_WEIGHTS['loss_weight_box']
         self._loss_weight_mask = config.LOSS_WEIGHTS['loss_weight_mask']

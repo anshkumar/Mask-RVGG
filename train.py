@@ -17,7 +17,7 @@ from loss import loss
 from utils import learning_rate_schedule
 from utils import coco_evaluation
 from utils import standard_fields
-from config import Config
+from importlib.machinery import SourceFileLoader
 
 import numpy as np
 import cv2
@@ -44,6 +44,8 @@ flags.DEFINE_string('saved_models_dir', './saved_models',
                     'directory for exporting saved_models')
 flags.DEFINE_string('label_map', './label_map.pbtxt',
                     'path to label_map.pbtxt')
+flags.DEFINE_string('config', './config.py',
+                    'Absolute path to config.py')
 flags.DEFINE_float('print_interval', 100,
                    'number of iteration between printing loss')
 flags.DEFINE_float('save_interval', 10000,
@@ -552,7 +554,9 @@ def options(options):
 
 def main(argv):
     init()
-    config = Config()
+    cnf = SourceFileLoader("", FLAGS.config).load_module()
+    
+    config = cnf.Config()
     config.display()
     mirrored_strategy = tf.distribute.MirroredStrategy()
 

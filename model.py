@@ -138,7 +138,8 @@ class MaskRVGG(tf.keras.Model):
         # post-processing for evaluation
         self.detect = Detect(config.NUM_CLASSES+1, max_output_size=config.MAX_OUTPUT_SIZE, 
             per_class_max_output_size=config.PER_CLASS_MAX_OUTPUT_SIZE,
-            conf_thresh=config.CONF_THRESH, nms_thresh=config.NMS_THRESH)
+            conf_thresh=config.CONF_THRESH, nms_thresh=config.NMS_THRESH,
+            include_variances=config.INCLUDE_VARIANCES)
         self.max_output_size = config.MAX_OUTPUT_SIZE
         self.num_classes = config.NUM_CLASSES
         self.config = config
@@ -171,7 +172,7 @@ class MaskRVGG(tf.keras.Model):
             'priors': self.priors
         }
 
-        pred.update(self.detect(pred))
+        pred.update(self.detect(pred, trad_nms=self.config.TRAD_NMS))
 
         if self.config.PREDICT_MASK:
             masks = self.mask_head(gt_boxes,

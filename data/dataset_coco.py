@@ -15,7 +15,7 @@ from data.parser import Parser
 # Todo encapsulate it as a class, here is the place to get dataset(train, eval, test)
 def prepare_dataloader(config, tfrecord_dir, feature_map_size, batch_size, subset="train"):
 
-    anchorobj = anchor.Anchor(img_size_h=config.IMAGE_SHAPE[0],img_size_w=config.IMAGE_SHAPE[0],
+    anchorobj = anchor.Anchor(img_size_h=config.IMAGE_SHAPE[0],img_size_w=config.IMAGE_SHAPE[1],
                               feature_map_size=feature_map_size,
                               aspect_ratio=config.ANCHOR_RATIOS,
                               scale=config.ANCHOR_SCALES)
