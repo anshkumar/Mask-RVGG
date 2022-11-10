@@ -18,7 +18,7 @@ class Parser(object):
 
         self.config = config
         self._output_size_h = config.IMAGE_SHAPE[0]
-        self._output_size_w = config.IMAGE_SHAPE[0]
+        self._output_size_w = config.IMAGE_SHAPE[1]
         self._anchor_instance = anchor_instance
         self._match_threshold = config.MATCH_THRESHOLD
         self._unmatched_threshold = config.UNMATCHED_THRESHOLD
