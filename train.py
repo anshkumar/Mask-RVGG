@@ -449,7 +449,31 @@ def update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, co
                                 metrics.v_mask.result(),
                                 metrics.v_mask_iou.result()))
 
-def add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, _h,_w):
+def draw_contours(image, num, boxes, classes, scores, masks, config, is_gt):
+  for i in range(num):
+    _y1, _x1, _y2, _x2  = boxes[i].astype(int)
+    _y1, _x1, _y2, _x2 = int(_y1), int(_x1), int(_y2), int(_x2)
+    boxW = _x2 - _x1
+    boxH = _y2 - _y1
+    _class = int(classes[i])
+
+    if config.PREDICT_MASK:
+      if is_gt:
+        _m = masks[i][_y1:_y2, _x1:_x2]
+      else:
+        _m = masks[i][:, :, _class-1]
+      if boxW > 0 and boxH > 0:
+        _m = cv2.resize(_m, (boxW, boxH))
+        mask = (_m > 0.5)
+        roi = image[_y1:_y2, _x1:_x2][mask]
+        blended = roi.astype("uint8")
+        image[_y1:_y2, _x1:_x2][mask] = blended*[0,0,0.6]
+
+    cv2.rectangle(image, (_x1, _y1), (_x2, _y2), (0, 255, 0), 2)
+    cv2.putText(image, str(_class)+': '+str(round(scores[i],2)), (_x1, _y1), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), lineType=cv2.LINE_AA)
+    
+def add_to_coco_evaluator(valid_image, valid_labels, output, config , coco_evaluator, _h,_w):
+    gt_image = valid_image.numpy().copy()
     image_id = int(time.time()*1000000)
     gt_num_box = valid_labels['num_obj'][0].numpy()
     gt_boxes = valid_labels['boxes_norm'][0][:gt_num_box]
@@ -459,17 +483,6 @@ def add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, _h,_w):
     if config.PREDICT_MASK:
       gt_masks = valid_labels['mask_target'][0][:gt_num_box].numpy()
 
-      # gt_masked_image = np.zeros((gt_num_box, _h, _w), dtype=np.uint8)
-      # for _b in range(gt_num_box):
-      #     box = gt_boxes[_b]
-      #     box = np.round(box).astype(int)
-      #     (startY, startX, endY, endX) = box.astype("int")
-      #     boxW = endX - startX
-      #     boxH = endY - startY
-      #     if boxW > 0 and boxH > 0:
-      #       _m = cv2.resize(gt_masks[_b].astype("uint8"), (boxW, boxH))
-      #       gt_masked_image[_b][startY:endY, startX:endX] = _m
-
       coco_evaluator.add_single_ground_truth_image_info(
           image_id='image'+str(image_id),
           groundtruth_dict={
@@ -477,6 +490,7 @@ def add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, _h,_w):
             standard_fields.InputDataFields.groundtruth_classes: gt_classes,
             standard_fields.InputDataFields.groundtruth_instance_masks: gt_masks
           })
+      draw_contours(gt_image, gt_num_box, gt_boxes, gt_classes, gt_classes*0+1, gt_masks, config, True)
     else:
       coco_evaluator.add_single_ground_truth_image_info(
           image_id='image'+str(image_id),
@@ -484,9 +498,10 @@ def add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, _h,_w):
             standard_fields.InputDataFields.groundtruth_boxes: gt_boxes,
             standard_fields.InputDataFields.groundtruth_classes: gt_classes,
           })
+      draw_contours(gt_image, gt_num_box, gt_boxes, gt_classes, gt_classes*0+1, None, config, True)
 
+    det_image = valid_image.numpy().copy()
     det_num = np.count_nonzero(output['detection_scores'][0].numpy()> config.CONF_THRESH)
-
     det_boxes = output['detection_boxes'][0][:det_num]
     det_boxes = det_boxes.numpy()*np.array([_h,_w,_h,_w])
     det_scores = output['detection_scores'][0][:det_num].numpy()
@@ -515,6 +530,7 @@ def add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, _h,_w):
               standard_fields.DetectionResultFields.detection_classes: det_classes,
               standard_fields.DetectionResultFields.detection_masks: det_masked_image
           })
+      draw_contours(det_image, det_num, det_boxes, det_classes, det_scores, det_masks, config, False)
     else:
       coco_evaluator.add_single_detected_image_info(
           image_id='image'+str(image_id),
@@ -523,6 +539,9 @@ def add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, _h,_w):
               standard_fields.DetectionResultFields.detection_scores: det_scores,
               standard_fields.DetectionResultFields.detection_classes: det_classes,
           })
+      draw_contours(det_image, det_num, det_boxes, det_classes, det_scores, None, config, False)
+
+    return np.hstack([det_image, gt_image])
 
 def init():
     physical_devices = tf.config.list_physical_devices('GPU')
@@ -696,6 +715,7 @@ def main(argv):
 
             # validation
             valid_iter = 0
+            debug_images = []
             for valid_image, valid_labels in tqdm(valid_dataset, ):
                 if valid_iter > FLAGS.valid_iter:
                     break
@@ -713,10 +733,15 @@ def main(argv):
                 metrics.v_mask.update_state(valid_mask_loss)
                 metrics.v_mask_iou.update_state(valid_mask_iou_loss)
                 
-                add_to_coco_evaluator(valid_labels, output, config , coco_evaluator, valid_image.shape[1], valid_image.shape[2])
+                debug_image = add_to_coco_evaluator(tf.cast(valid_image[0], dtype=tf.uint8), valid_labels, output, config , coco_evaluator, valid_image.shape[1], valid_image.shape[2])
+                debug_images.append(debug_image)
                 valid_iter += 1
 
             coco_metrics = coco_evaluator.evaluate()
+            with test_summary_writer.as_default():
+              # Don't forget to reshape.
+              tf.summary.image("Images", np.array(debug_images)[0:config.MAX_DISPLAY_IMAGES], max_outputs=config.MAX_DISPLAY_IMAGES, step=iterations)
+
             update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, config)
             coco_evaluator.clear()
             metrics.reset()
