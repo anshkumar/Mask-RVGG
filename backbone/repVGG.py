@@ -5,7 +5,7 @@ from keras.engine import training
 
 AUTOTUNE = tf.data.experimental.AUTOTUNE
 
-def conv_bn(out_channels, kernel_size, strides, groups=1):
+def conv_bn(out_channels, kernel_size, strides, groups=1, name=None):
     return tf.keras.Sequential(
         [
             tf.keras.layers.Conv2D(
@@ -18,7 +18,7 @@ def conv_bn(out_channels, kernel_size, strides, groups=1):
                 name="conv",
             ),
             tf.keras.layers.BatchNormalization(name="bn"),
-        ]
+        ], name=name
     )
 
 class RepVGGBlock(tf.keras.layers.Layer):
@@ -31,8 +31,9 @@ class RepVGGBlock(tf.keras.layers.Layer):
         dilation=1,
         groups=1,
         deploy=False,
+        name=None
     ):
-        super(RepVGGBlock, self).__init__()
+        super(RepVGGBlock, self).__init__(name=name)
         self.deploy = deploy
         self.groups = groups
         self.in_channels = in_channels
@@ -50,10 +51,11 @@ class RepVGGBlock(tf.keras.layers.Layer):
                         dilation_rate=dilation,
                         groups=groups,
                         use_bias=True,
+                        name='rbr_reparam'
                     )
         else:
             self.rbr_identity = (
-                tf.keras.layers.BatchNormalization()
+                tf.keras.layers.BatchNormalization(name='bn')
                 if out_channels == in_channels and strides == 1
                 else None
             )
@@ -62,12 +64,14 @@ class RepVGGBlock(tf.keras.layers.Layer):
                 kernel_size=kernel_size,
                 strides=strides,
                 groups=groups,
+                name='rbr_dense'
             )
             self.rbr_1x1 = conv_bn(
                 out_channels=out_channels,
                 kernel_size=1,
                 strides=strides,
                 groups=groups,
+                name='rbr_1x1'
             )
             print("RepVGG Block, identity = ", self.rbr_identity)
 
@@ -101,9 +105,10 @@ class RepVGGBlock(tf.keras.layers.Layer):
         if kernel1x1 is None:
             return 0
         else:
-            return tf.pad(
-                kernel1x1, tf.constant([[1, 1], [1, 1], [0, 0], [0, 0]]) # Kernel Shape: [H, W, C_i, C_o]. Padding to H,W on top, bottom, left and right.
-            )
+            # return tf.pad(kernel1x1, tf.constant([[1, 1], [1, 1], [0, 0], [0, 0]])) # Kernel Shape: [H, W, C_i, C_o]. Padding to H,W on top, bottom, left and right.
+            
+            # https://github.com/hoangthang1607/RepVGG-Tensorflow-2/issues/2#issuecomment-1005210146
+            return tf.pad(kernel1x1, tf.constant([[0, 2], [0, 2], [0, 0], [0, 0]]) ) # Kernel Shape: [H, W, C_i, C_o]. Padding to H,W on top, bottom, left and right.
 
     def _fuse_bn_tensor(self, branch):
         if branch is None:
@@ -145,7 +150,7 @@ class RepVGGBlock(tf.keras.layers.Layer):
 def _make_stage(override_groups_map, input_filters, output_filters, num_blocks, stride, cur_layer_idx, deploy, name):
     strides = [stride] + [1] * (num_blocks - 1)
     blocks = []
-    for stride in strides:
+    for i, stride in enumerate(strides):
         cur_groups = override_groups_map.get(cur_layer_idx, 1)
         blocks.append(
             RepVGGBlock(
@@ -155,8 +160,10 @@ def _make_stage(override_groups_map, input_filters, output_filters, num_blocks, 
                 strides=stride,
                 groups=cur_groups,
                 deploy=deploy,
+                name='block'+str(i)
             )
         )
+        input_filters = output_filters
         cur_layer_idx += 1
     return tf.keras.Sequential(blocks, name=name), cur_layer_idx
 
@@ -169,6 +176,7 @@ def RepVGG(
             deploy=False,
             include_preprocessing=True,
             include_top=True,
+            weights=None,
             model_name=None
             ):
         assert len(width_multiplier) == 4
@@ -184,6 +192,7 @@ def RepVGG(
             kernel_size=3,
             strides=2,
             deploy=deploy,
+            name='stage0',
         )
         cur_layer_idx = 1
         stage1, cur_layer_idx = _make_stage(
@@ -253,6 +262,13 @@ def RepVGG(
         # Create model.
         model = training.Model(inputs=img_input, outputs=out, name=model_name)
 
+        # Load weights.
+        if weights != '' and weights is not None:
+            print('Loading imagenet weights from ', weights)
+            model.load_weights(weights)
+        else:
+            print("Training model from scratch.")
+
         return model
 
 optional_groupwise_layers = [2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26]
@@ -260,7 +276,7 @@ g2_map = {l: 2 for l in optional_groupwise_layers}
 g4_map = {l: 4 for l in optional_groupwise_layers}
 
 
-def create_RepVGG_A0(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_A0'):
+def create_RepVGG_A0(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_A0'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[2, 4, 14, 1],
@@ -270,11 +286,12 @@ def create_RepVGG_A0(input_shape, include_preprocessing=True, include_top=True, 
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_A1(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_A1'):
+def create_RepVGG_A1(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_A1'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[2, 4, 14, 1],
@@ -284,11 +301,12 @@ def create_RepVGG_A1(input_shape, include_preprocessing=True, include_top=True, 
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_A2(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_A2'):
+def create_RepVGG_A2(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_A2'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[2, 4, 14, 1],
@@ -298,11 +316,12 @@ def create_RepVGG_A2(input_shape, include_preprocessing=True, include_top=True, 
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B0(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_B0'):
+def create_RepVGG_B0(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_B0'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -312,11 +331,12 @@ def create_RepVGG_B0(input_shape, include_preprocessing=True, include_top=True, 
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B1(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_B1'):
+def create_RepVGG_B1(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_B1'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -326,11 +346,12 @@ def create_RepVGG_B1(input_shape, include_preprocessing=True, include_top=True, 
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B1g2(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_B1g2'):
+def create_RepVGG_B1g2(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_B1g2'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -340,11 +361,12 @@ def create_RepVGG_B1g2(input_shape, include_preprocessing=True, include_top=True
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B1g4(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_B1g4'):
+def create_RepVGG_B1g4(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_B1g4'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -354,11 +376,12 @@ def create_RepVGG_B1g4(input_shape, include_preprocessing=True, include_top=True
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B2(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_B2'):
+def create_RepVGG_B2(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_B2'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -368,11 +391,12 @@ def create_RepVGG_B2(input_shape, include_preprocessing=True, include_top=True, 
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B2g2(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_B2g2'):
+def create_RepVGG_B2g2(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_B2g2'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -382,11 +406,12 @@ def create_RepVGG_B2g2(input_shape, include_preprocessing=True, include_top=True
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B2g4(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_B2g4'):
+def create_RepVGG_B2g4(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_B2g4'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -396,11 +421,12 @@ def create_RepVGG_B2g4(input_shape, include_preprocessing=True, include_top=True
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B3(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_B3'):
+def create_RepVGG_B3(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_B3'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -410,11 +436,12 @@ def create_RepVGG_B3(input_shape, include_preprocessing=True, include_top=True, 
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B3g2(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG_B3g2'):
+def create_RepVGG_B3g2(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG_B3g2'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -424,11 +451,12 @@ def create_RepVGG_B3g2(input_shape, include_preprocessing=True, include_top=True
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
 
-def create_RepVGG_B3g4(input_shape, include_preprocessing=True, include_top=True, deploy=False, model_name='RepVGG-B3g4'):
+def create_RepVGG_B3g4(input_shape, include_preprocessing=True, include_top=True, deploy=False, weights=None, model_name='RepVGG-B3g4'):
     return RepVGG(
         input_shape=input_shape,
         num_blocks=[4, 6, 16, 1],
@@ -438,6 +466,7 @@ def create_RepVGG_B3g4(input_shape, include_preprocessing=True, include_top=True
         deploy=deploy,
         include_preprocessing=include_preprocessing,
         include_top=include_top,
+        weights=weights,
         model_name=model_name
     )
 
@@ -489,3 +518,4 @@ def repvgg_model_convert(
         deploy_model.save_weights(save_path)
 
     return deploy_model
+

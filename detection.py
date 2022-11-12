@@ -21,7 +21,6 @@ class Detect(object):
         self.per_class_max_output_size = per_class_max_output_size
         self.include_variances = include_variances
 
-    @tf.function
     def __call__(self, net_outs, trad_nms=False):
         """
         Args:

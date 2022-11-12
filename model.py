@@ -15,7 +15,7 @@ class MaskRVGG(tf.keras.Model):
 
     """
 
-    def __init__(self, config, base_model=None, deploy=False):
+    def __init__(self, config, imagenet_path='', base_model=None, deploy=False):
         super(MaskRVGG, self).__init__()
 
         backbones = {
@@ -64,6 +64,7 @@ class MaskRVGG(tf.keras.Model):
                                 input_shape=config.IMAGE_SHAPE,
                                 include_preprocessing=True,
                                 include_top=False,
+                                weights=imagenet_path,
                                 deploy=True)
 
                 for layer, deploy_layer in zip(base_model.base_model.layers, self.base_model.layers):
@@ -87,7 +88,8 @@ class MaskRVGG(tf.keras.Model):
                 self.base_model = backbones[config.BACKBONE](
                                 input_shape=config.IMAGE_SHAPE,
                                 include_preprocessing=True,
-                                include_top=False,)
+                                include_top=False,
+                                weights=imagenet_path,)
             outputs=self.base_model.output
 
         # whether to freeze the convolutional base

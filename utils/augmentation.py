@@ -1933,5 +1933,5 @@ def random_augmentation(images, bboxes, masks, output_size, classes, config):
               scale_max=1.3)
 
     # return img, bboxes, masks, classes
-    return a_image, a_bboxes, a_masks, 
+    return a_image, a_bboxes, a_masks, a_classes
     

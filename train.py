@@ -40,12 +40,12 @@ flags.DEFINE_string('pretrained_checkpoints', '',
                     'path to pretrained checkpoints')
 flags.DEFINE_string('logs_dir', './logs',
                     'directory for saving logs')
-flags.DEFINE_string('saved_models_dir', './saved_models',
-                    'directory for exporting saved_models')
 flags.DEFINE_string('label_map', './label_map.pbtxt',
                     'path to label_map.pbtxt')
 flags.DEFINE_string('config', './config.py',
                     'Absolute path to config.py')
+flags.DEFINE_string('imagenet_path', '',
+                    'Absolute path to imagenet pretrained weights')
 flags.DEFINE_float('print_interval', 100,
                    'number of iteration between printing loss')
 flags.DEFINE_float('save_interval', 10000,
@@ -581,7 +581,7 @@ def main(argv):
 
     if FLAGS.multi_gpu:
         with mirrored_strategy.scope():
-            model = MaskRVGG(config)
+            model = MaskRVGG(config, FLAGS.imagenet_path)
             add_weight_decay(model, config.WEIGHT_DECAY)   
             optimizer = get_optimizer(config)
             checkpoint, manager = get_checkpoint_manager(model, optimizer)
@@ -589,7 +589,7 @@ def main(argv):
         global_batch_size = (BATCH_SIZE_PER_REPLICA *
                         mirrored_strategy.num_replicas_in_sync)
     else:
-        model = MaskRVGG(config)
+        model = MaskRVGG(config, FLAGS.imagenet_path)
         add_weight_decay(model, config.WEIGHT_DECAY)   
         optimizer = get_optimizer(config)
         checkpoint, manager = get_checkpoint_manager(model, optimizer)
