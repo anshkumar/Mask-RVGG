@@ -105,10 +105,10 @@ class RepVGGBlock(tf.keras.layers.Layer):
         if kernel1x1 is None:
             return 0
         else:
-            # return tf.pad(kernel1x1, tf.constant([[1, 1], [1, 1], [0, 0], [0, 0]])) # Kernel Shape: [H, W, C_i, C_o]. Padding to H,W on top, bottom, left and right.
+            return tf.pad(kernel1x1, tf.constant([[1, 1], [1, 1], [0, 0], [0, 0]])) # Kernel Shape: [H, W, C_i, C_o]. Padding to H,W on top, bottom, left and right.
             
             # https://github.com/hoangthang1607/RepVGG-Tensorflow-2/issues/2#issuecomment-1005210146
-            return tf.pad(kernel1x1, tf.constant([[0, 2], [0, 2], [0, 0], [0, 0]]) ) # Kernel Shape: [H, W, C_i, C_o]. Padding to H,W on top, bottom, left and right.
+            # return tf.pad(kernel1x1, tf.constant([[0, 2], [0, 2], [0, 0], [0, 0]]) ) # Kernel Shape: [H, W, C_i, C_o]. Padding to H,W on top, bottom, left and right.
 
     def _fuse_bn_tensor(self, branch):
         if branch is None:
