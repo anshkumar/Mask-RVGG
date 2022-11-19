@@ -27,7 +27,6 @@ class Config(object):
     # ANCHOR_SCALES = [list(i*np.array([2 ** 0, 2 ** (1. / 3.), 2 ** (2. / 3.)])) for i in [16, 32, 64, 128, 256]]
     ANCHOR_SCALES = [[24.0, 30.238105197476955, 38.097625247236785], [48.0, 60.47621039495391, 76.19525049447357], [96.0, 120.95242078990782, 152.39050098894714], [192.0, 241.90484157981564, 304.7810019778943], [384.0, 483.8096831596313, 609.5620039557886]]
 
-    # Weather to use FPN 
     FPN_FEATURE_MAP_SIZE = 256
 
     # Number of classification classes (excluding background)
@@ -45,7 +44,7 @@ class Config(object):
     # Size of the top-down layers used to build the feature pyramid
     TOP_DOWN_PYRAMID_SIZE = 256
 
-    PREDICT_MASK = True
+    PREDICT_MASK = False
     # Pooled ROIs
     MASK_POOL_SIZE = 14
 
@@ -80,13 +79,13 @@ class Config(object):
     # implementation.
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW', 'AdaBelief']
     OPTIMIZER = 'SGD'
-    LEARNING_RATE = 4e-2
+    LEARNING_RATE = 1e-2
     N_WARMUP_STEPS = 1000
     WARMUP_LR = 0.0
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False
-    TRAIN_ITER = 800000
-    LR_TOTAL_STEPS = 800000
+    TRAIN_ITER = 400000
+    LR_TOTAL_STEPS = 400000
 
     # Weight decay regularization
     WEIGHT_DECAY = 1e-4 # 5*1e-4
@@ -120,6 +119,8 @@ class Config(object):
 
     IGNORE_SMALL_BBOX = True
     SMALL_BBOX_AREA = 4
+
+    MAX_DISPLAY_IMAGES = 20
 
     def to_dict(self):
         return {a: getattr(self, a)

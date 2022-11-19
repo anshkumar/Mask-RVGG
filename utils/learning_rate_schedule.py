@@ -70,9 +70,9 @@ class LearningRateSchedule(tf.keras.optimizers.schedules.LearningRateSchedule):
           slope = (learning_rate_base - warmup_learning_rate) / warmup_steps
           warmup_rate = slope * tf.cast(global_step,
                                         tf.float32) + warmup_learning_rate
-          learning_rate = tf.where(global_step < warmup_steps, warmup_rate,
+          learning_rate = tf.where(tf.cast(global_step, tf.float32) < warmup_steps, warmup_rate,
                                    learning_rate)
-        return tf.where(global_step > total_steps, 0.0, learning_rate,
+        return tf.where(tf.cast(global_step, tf.float32) > total_steps, 0.0, learning_rate,
                         name='learning_rate')
 
     def get_config(self):

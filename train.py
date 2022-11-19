@@ -704,7 +704,7 @@ def main(argv):
         metrics.conf.update_state(conf_loss)
         metrics.mask.update_state(mask_loss)
         metrics.mask_iou.update_state(mask_iou_loss)
-        update_train_losses(train_summary_writer, iterations, metrics, optimizer._decayed_lr(var_dtype=tf.float32))
+        update_train_losses(train_summary_writer, iterations, metrics, optimizer.lr.numpy())
 
         if iterations and iterations % FLAGS.save_interval == 0:
             # save checkpoint

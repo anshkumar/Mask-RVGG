@@ -3,8 +3,8 @@ from model import MaskRVGG
 from config import Config
 
 class Model(MaskRVGG):
-    def __init__(self, config, base_model=None, deploy=False):
-        super(Model, self).__init__(config, base_model, deploy)
+    def __init__(self, config, imagenet_path='',  base_model=None, deploy=False):
+        super(Model, self).__init__(config, imagenet_path, base_model, deploy)
 
     @tf.function()
     def call(self, inputs, training=False):
@@ -42,13 +42,13 @@ test_inp = tf.random.uniform(shape=[16,512,512,3], minval=0, maxval=255, dtype=t
 config = Config()
 model = Model(config)
 checkpoint = tf.train.Checkpoint(model=model)
-status = checkpoint.restore('checkpoints_map28/ckpt-114').expect_partial()
+status = checkpoint.restore('checkpoints/ckpt-38')
 train_y = model(test_inp, training=False)
 # model.save('saved_models')
 
 deploy_model = Model(config, base_model=model, deploy=True)
 checkpoint = tf.train.Checkpoint(model=deploy_model)
-status = checkpoint.restore('checkpoints_map28/ckpt-114').expect_partial()
+status = checkpoint.restore('checkpoints/ckpt-38')
 
 deploy_y = deploy_model(test_inp, training=False)
 
