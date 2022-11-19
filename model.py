@@ -132,7 +132,7 @@ class MaskRVGG(tf.keras.Model):
                               scale=config.ANCHOR_SCALES)
 
 
-        self.predictionHead = PredictionModule(config.FPN_FEATURE_MAP_SIZE, 9, config.NUM_CLASSES+1)
+        self.predictionHead = PredictionModule(config.FPN_FEATURE_MAP_SIZE, 9, config.NUM_CLASSES+1, config.ACTIVATION)
 
         self.num_anchors = anchorobj.num_anchors
         self.priors = anchorobj.anchors

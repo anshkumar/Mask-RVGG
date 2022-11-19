@@ -36,10 +36,11 @@ class FastMaskIoUNet(tf.keras.layers.Layer):
 
 class PredictionModule(tf.keras.layers.Layer):
 
-    def __init__(self, out_channels, num_anchors, num_class):
+    def __init__(self, out_channels, num_anchors, num_class, activation='SOFTMAX'):
         super(PredictionModule, self).__init__()
         self.num_anchors = num_anchors
         self.num_class = num_class
+        self.activation = activation
 
         self.Conv = tf.keras.layers.Conv2D(out_channels, (3, 3), 1, padding="same",
                                            kernel_initializer=  tf.keras.initializers.RandomNormal(stddev=0.01),
@@ -67,6 +68,9 @@ class PredictionModule(tf.keras.layers.Layer):
         # reshape the prediction head result for following loss calculation
         pred_class = tf.reshape(pred_class, [tf.shape(pred_class)[0], -1, self.num_class])
         pred_box = tf.reshape(pred_box, [tf.shape(pred_box)[0], -1, 4])
-        pred_class = tf.nn.softmax(pred_class, axis=-1)
+        if self.activation == 'SOFTMAX':
+            pred_class = tf.nn.softmax(pred_class, axis=-1)
+        else:
+            pred_class = tf.math.sigmoid(pred_class)
         
         return pred_class, pred_box 

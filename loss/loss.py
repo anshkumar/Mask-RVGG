@@ -1,6 +1,5 @@
 import tensorflow as tf
-import time
-from utils import utils
+import tensorflow_addons as tfa
 
 class Loss(object):
     def __init__(self, config):
@@ -97,7 +96,7 @@ class Loss(object):
         tf.debugging.assert_all_finite(loss_loc, "Loss Location NaN/Inf")
         return [tf.math.divide_no_nan(tf.reduce_sum(loss_loc), num_pos)*self._loss_weight_box]
 
-    def _focal_conf_loss(self, alpha=0.25, gamma=1.5):
+    def _focal_conf_loss(self, alpha=0.25, gamma=2.0):
         """
         Focal loss but using sigmoid like the original paper.
         """
@@ -107,13 +106,17 @@ class Loss(object):
         labels = tf.gather_nd(labels, indices)
         pred_cls = tf.gather_nd(self.pred_cls, indices)
 
-        # compute the focal loss
-        alpha_factor = tf.keras.backend.ones_like(labels) * alpha
-        alpha_factor = tf.where(tf.keras.backend.equal(labels, 1), alpha_factor, 1 - alpha_factor)
-        # (1 - 0.99) ** 2 = 1e-4, (1 - 0.9) ** 2 = 1e-2
-        focal_weight = tf.where(tf.keras.backend.equal(labels, 1), 1 - pred_cls, pred_cls)
-        focal_weight = alpha_factor * focal_weight ** gamma
-        loss = focal_weight * tf.keras.backend.binary_crossentropy(labels, pred_cls, from_logits=False)
+        # # compute the focal loss
+        # alpha_factor = tf.keras.backend.ones_like(labels) * alpha
+        # alpha_factor = tf.where(tf.keras.backend.equal(labels, 1), alpha_factor, 1 - alpha_factor)
+        # # (1 - 0.99) ** 2 = 1e-4, (1 - 0.9) ** 2 = 1e-2
+        # focal_weight = tf.where(tf.keras.backend.equal(labels, 1), 1 - pred_cls, pred_cls)
+        # focal_weight = alpha_factor * focal_weight ** gamma
+        # loss = focal_weight * tf.keras.backend.binary_crossentropy(labels, pred_cls, from_logits=False)
+
+        fl = tfa.losses.SigmoidFocalCrossEntropy(from_logits=False, alpha=alpha, gamma=gamma,
+            reduction=tf.keras.losses.Reduction.NONE)
+        loss = fl(y_true=labels, y_pred=pred_cls)
                 
         pos_indices = tf.where(self.conf_gt > 0 )
         num_pos = tf.shape(pos_indices)[0]
