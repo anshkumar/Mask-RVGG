@@ -577,9 +577,9 @@ def main(argv):
     
     config = cnf.Config()
     config.display()
-    mirrored_strategy = tf.distribute.MirroredStrategy()
 
     if FLAGS.multi_gpu:
+        mirrored_strategy = tf.distribute.MirroredStrategy()
         with mirrored_strategy.scope():
             model = MaskRVGG(config, FLAGS.imagenet_path)
             add_weight_decay(model, config.WEIGHT_DECAY)   
