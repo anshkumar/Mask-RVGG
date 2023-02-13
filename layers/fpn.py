@@ -23,10 +23,5 @@ def build_FPN(features, num_fpn_filters):
         kernel_initializer=tf.keras.initializers.glorot_uniform(),
         activation="relu")(p5)
 
-    p6 = tf.keras.layers.Conv2D(num_fpn_filters, (3, 3), 2, padding="valid",
-        kernel_initializer=tf.keras.initializers.glorot_uniform())(tf.keras.layers.ZeroPadding2D(padding=(1,1))(p5))
-    p7 = tf.keras.layers.Conv2D(num_fpn_filters, (3, 3), 2, padding="valid",
-        kernel_initializer=tf.keras.initializers.glorot_uniform())(tf.keras.layers.ZeroPadding2D(padding=(1,1))(p6))
-
-    return [p3, p4, p5, p6, p7]
+    return [p3, p4, p5]
  

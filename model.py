@@ -1,6 +1,7 @@
 import tensorflow as tf
 from backbone import repVGG
 from layers.fpn import build_FPN
+from layers.pafpn import build_PAFPN
 from layers.maskNet import MaskHead
 from layers.head import PredictionModule
 assert tf.__version__.startswith('2')
@@ -101,7 +102,10 @@ class MaskRVGG(tf.keras.Model):
               if isinstance(layer, tf.keras.layers.BatchNormalization):
                 layer.trainable = False
 
-        self.fpn_features = build_FPN(outputs, config.FPN_FEATURE_MAP_SIZE)
+        if config.USE_PAFPN:
+            self.fpn_features = build_PAFPN(outputs, config.PAFPN_FEATURE_MAP_SIZE)
+        else:
+            self.fpn_features = build_FPN(outputs, config.FPN_FEATURE_MAP_SIZE)
         
         # extract certain feature maps for FPN
         self.backbone = tf.keras.Model(inputs=self.base_model.input,
@@ -115,16 +119,6 @@ class MaskRVGG(tf.keras.Model):
         # 246080982
         self.feature_map_size = np.array(
             [list(self.base_model.get_layer(x).output.shape[1:3]) for x in out_layers[config.BACKBONE]])
-        out_height_p6 = np.ceil(
-            (self.feature_map_size[-1, 0]).astype(np.float32) / float(2))
-        out_width_p6  = np.ceil(
-            (self.feature_map_size[-1, 1]).astype(np.float32) / float(2))
-        out_height_p7 = np.ceil(out_height_p6 / float(2))
-        out_width_p7  = np.ceil(out_width_p6/ float(2))
-        self.feature_map_size = np.concatenate(
-            (self.feature_map_size, 
-            [[out_height_p6, out_width_p6], [out_height_p7, out_width_p7]]), 
-            axis=0)
 
         anchorobj = anchor.Anchor(img_size_h=config.IMAGE_SHAPE[0],img_size_w=config.IMAGE_SHAPE[1],
                               feature_map_size=self.feature_map_size,
@@ -159,6 +153,7 @@ class MaskRVGG(tf.keras.Model):
         pred_offset = []
 
         # all output from FPN use same prediction head
+        
         for f_map in features:
             cls, offset = self.predictionHead(f_map)
             pred_cls.append(cls)
@@ -177,7 +172,7 @@ class MaskRVGG(tf.keras.Model):
 
         if self.config.PREDICT_MASK:
             masks = self.mask_head(gt_boxes,
-                            features[:-2],
+                            features,
                             self.num_classes,
                             self.config,
                             training)

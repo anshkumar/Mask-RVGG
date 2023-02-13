@@ -27,6 +27,8 @@ class Config(object):
     # ANCHOR_SCALES = [list(i*np.array([2 ** 0, 2 ** (1. / 3.), 2 ** (2. / 3.)])) for i in [16, 32, 64, 128, 256]]
     ANCHOR_SCALES = [[24.0, 30.238105197476955, 38.097625247236785], [48.0, 60.47621039495391, 76.19525049447357], [96.0, 120.95242078990782, 152.39050098894714], [192.0, 241.90484157981564, 304.7810019778943], [384.0, 483.8096831596313, 609.5620039557886]]
 
+    USE_PAFPN = True
+    PAFPN_FEATURE_MAP_SIZE = [96, 288]
     FPN_FEATURE_MAP_SIZE = 256
 
     # Number of classification classes (excluding background)
@@ -34,7 +36,7 @@ class Config(object):
 
     MAX_OUTPUT_SIZE = 100
     PER_CLASS_MAX_OUTPUT_SIZE = 100
-    CONF_THRESH = 0.05
+    CONF_THRESH = 0.01
     TRAD_NMS = False
     NMS_THRESH = 0.5
 
@@ -46,7 +48,7 @@ class Config(object):
 
     PREDICT_MASK = False
     # Pooled ROIs
-    MASK_POOL_SIZE = 14
+    MASK_POOL_SIZE = 7
 
     # Shape of output mask
     # To change this you also need to change the neural network mask branch
@@ -68,9 +70,9 @@ class Config(object):
     INCLUDE_VARIANCES = True # Include variance to bounding boxes or not.
 
     # Allowed are : ['OHEM', 'FOCAL', 'CROSSENTROPY']
-    LOSS_CLASSIFICATION = 'OHEM'
-    ACTIVATION = 'SOFTMAX' # ['SOFTMAX', 'SIGMOID']
-    NEG_POS_RATIO = 3
+    LOSS_CLASSIFICATION = 'FOCAL'
+    ACTIVATION = 'SIGMOID' # ['SOFTMAX', 'SIGMOID']
+    NEG_POS_RATIO = 3 # For OHEM
     USE_MASK_IOU = False
 
     # Learning rate and momentum
@@ -80,7 +82,7 @@ class Config(object):
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW', 'AdaBelief']
     OPTIMIZER = 'SGD'
     LEARNING_RATE = 1e-2
-    N_WARMUP_STEPS = 1000
+    N_WARMUP_STEPS = 7393
     WARMUP_LR = 0.0
     LEARNING_MOMENTUM = 0.9
     LR_SCHEDULE = False

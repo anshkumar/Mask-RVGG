@@ -178,6 +178,9 @@ class MaskHead(keras.layers.Layer):
                            name='mrcnn_mask_bn2')
         self.act_2 = layers.Activation('relu')
 
+        self.deconv_1 = layers.TimeDistributed(layers.Conv2DTranspose(config.TOP_DOWN_PYRAMID_SIZE, (2, 2), strides=2, activation="relu"),
+                            name="mrcnn_mask_deconv_1")
+
         self.conv_3 = layers.TimeDistributed(layers.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (3, 3), padding="same"),
                            name="mrcnn_mask_conv3")
         self.batch_norm_3 = layers.TimeDistributed(BatchNorm(),
@@ -190,8 +193,8 @@ class MaskHead(keras.layers.Layer):
                            name='mrcnn_mask_bn4')
         self.act_4 = layers.Activation('relu')
 
-        self.deconv = layers.TimeDistributed(layers.Conv2DTranspose(config.TOP_DOWN_PYRAMID_SIZE, (2, 2), strides=2, activation="relu"),
-                            name="mrcnn_mask_deconv")
+        self.deconv_2 = layers.TimeDistributed(layers.Conv2DTranspose(config.TOP_DOWN_PYRAMID_SIZE, (2, 2), strides=2, activation="relu"),
+                            name="mrcnn_mask_deconv_2")
 
         self.use_bigger_mask = False
         # Use Bigger Mask Shapes
@@ -201,12 +204,12 @@ class MaskHead(keras.layers.Layer):
             # Assert Divisable by 28
             assert config.MASK_SHAPE[0] % 28 == 0
             self.use_bigger_mask = True
-            self.extra_layers = keras.Sequential()
+            self.extra_layers = []
             for idx in  range(1 , int(math.log(config.MASK_SHAPE[0] // 28, 2)) + 1):
-                self.extra_layers.add(layers.TimeDistributed(layers.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (3, 3), padding="same"), name=f"mrcnn_mask_conv{4+idx}"))
-                self.extra_layers.add(layers.TimeDistributed(BatchNorm(), name=f'mrcnn_mask_bn{4+idx}'))
-                self.extra_layers.add(layers.Activation('relu'))
-                self.extra_layers.add(layers.TimeDistributed(layers.Conv2DTranspose(config.TOP_DOWN_PYRAMID_SIZE, (2, 2), strides=2, activation="relu"), name=f"mrcnn_mask_deconv{idx+1}"))
+                self.extra_layers.append(layers.TimeDistributed(layers.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (3, 3), padding="same"), name=f"mrcnn_mask_conv{4+idx}"))
+                self.extra_layers.append(layers.TimeDistributed(BatchNorm(), name=f'mrcnn_mask_bn{4+idx}'))
+                self.extra_layers.append(layers.Activation('relu'))
+                self.extra_layers.append(layers.TimeDistributed(layers.Conv2DTranspose(config.TOP_DOWN_PYRAMID_SIZE, (2, 2), strides=2, activation="relu"), name=f"mrcnn_mask_deconv{idx+1}"))
 
         self.final_conv = layers.TimeDistributed(layers.Conv2D(config.NUM_CLASSES, (1, 1), strides=1, activation="sigmoid"),
                            name="mrcnn_mask")
@@ -237,6 +240,8 @@ class MaskHead(keras.layers.Layer):
         x = self.batch_norm_2(x)
         x = self.act_2(x)
 
+        x = self.deconv_1(x)
+
         x = self.conv_3(x)
         x = self.batch_norm_3(x)
         x = self.act_3(x)
@@ -245,10 +250,11 @@ class MaskHead(keras.layers.Layer):
         x = self.batch_norm_4(x)
         x = self.act_4(x)
 
-        x = self.deconv(x)
+        x = self.deconv_2(x)
 
         if self.use_bigger_mask:
-            x = self.extra_layers(x)
+            for _conv in self.extra_layers:
+                x = _conv(x)
 
         x = self.final_conv(x)
         return x
