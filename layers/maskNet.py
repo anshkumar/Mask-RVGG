@@ -172,26 +172,14 @@ class MaskHead(keras.layers.Layer):
                            name='mrcnn_mask_bn1')
         self.act_1 = layers.Activation('relu')
 
-        self.conv_2 = layers.TimeDistributed(layers.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (3, 3), padding="same"),
-                           name="mrcnn_mask_conv2")
-        self.batch_norm_2 = layers.TimeDistributed(BatchNorm(),
-                           name='mrcnn_mask_bn2')
-        self.act_2 = layers.Activation('relu')
-
         self.deconv_1 = layers.TimeDistributed(layers.Conv2DTranspose(config.TOP_DOWN_PYRAMID_SIZE, (2, 2), strides=2, activation="relu"),
                             name="mrcnn_mask_deconv_1")
 
-        self.conv_3 = layers.TimeDistributed(layers.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (3, 3), padding="same"),
+        self.conv_2 = layers.TimeDistributed(layers.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (3, 3), padding="same"),
                            name="mrcnn_mask_conv3")
-        self.batch_norm_3 = layers.TimeDistributed(BatchNorm(),
+        self.batch_norm_2 = layers.TimeDistributed(BatchNorm(),
                            name='mrcnn_mask_bn3')
-        self.act_3 = layers.Activation('relu')
-
-        self.conv_4 = layers.TimeDistributed(layers.Conv2D(config.TOP_DOWN_PYRAMID_SIZE, (3, 3), padding="same"),
-                           name="mrcnn_mask_conv4")
-        self.batch_norm_4 = layers.TimeDistributed(BatchNorm(),
-                           name='mrcnn_mask_bn4')
-        self.act_4 = layers.Activation('relu')
+        self.act_2 = layers.Activation('relu')
 
         self.deconv_2 = layers.TimeDistributed(layers.Conv2DTranspose(config.TOP_DOWN_PYRAMID_SIZE, (2, 2), strides=2, activation="relu"),
                             name="mrcnn_mask_deconv_2")
@@ -236,20 +224,12 @@ class MaskHead(keras.layers.Layer):
         x = self.batch_norm_1(x)
         x = self.act_1(x)
 
+        x = self.deconv_1(x)
+
         x = self.conv_2(x)
         x = self.batch_norm_2(x)
         x = self.act_2(x)
-
-        x = self.deconv_1(x)
-
-        x = self.conv_3(x)
-        x = self.batch_norm_3(x)
-        x = self.act_3(x)
-
-        x = self.conv_4(x)
-        x = self.batch_norm_4(x)
-        x = self.act_4(x)
-
+        
         x = self.deconv_2(x)
 
         if self.use_bigger_mask:
