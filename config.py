@@ -10,7 +10,7 @@ class Config(object):
     """
     # Backbone network architecture
     # Supported values are: 'resnet50', 'repVGG-A0', 'repVGG-A1', 'repVGG-A2', 'repVGG-B0', 'repVGG-B1', 'repVGG-B1g2', 'repVGG-B1g4', 'repVGG-B2', 'repVGG-B2g2', 'repVGG-B2g4', 'repVGG-B3', 'repVGG-B3g2', 'repVGG-B3g4'
-    BACKBONE = "repVGG-B3g4"
+    BACKBONE = "repVGG-A0"
     BASE_MODEL_TRAINABLE = True
     FREEZE_BACKBONE_BN = False
 
@@ -21,11 +21,11 @@ class Config(object):
 
     # Ratios of anchors at each cell (width/height)
     # A value of 1 represents a square anchor, and 0.5 is a wide anchor
-    ANCHOR_RATIOS =  [ [[1, 1/2, 2]] ]*5
+    ANCHOR_RATIOS =  [ [[1, 1/2, 2]] ]*3
 
     # Length of square anchor side in pixels
-    # ANCHOR_SCALES = [list(i*np.array([2 ** 0, 2 ** (1. / 3.), 2 ** (2. / 3.)])) for i in [16, 32, 64, 128, 256]]
-    ANCHOR_SCALES = [[24.0, 30.238105197476955, 38.097625247236785], [48.0, 60.47621039495391, 76.19525049447357], [96.0, 120.95242078990782, 152.39050098894714], [192.0, 241.90484157981564, 304.7810019778943], [384.0, 483.8096831596313, 609.5620039557886]]
+    ANCHOR_SCALES = [list(i*np.array([2 ** 0, 2 ** (1. / 3.), 2 ** (2. / 3.)])) for i in [32, 64, 128]]
+    # ANCHOR_SCALES = [[24.0, 30.238105197476955, 38.097625247236785], [48.0, 60.47621039495391, 76.19525049447357], [96.0, 120.95242078990782, 152.39050098894714], [192.0, 241.90484157981564, 304.7810019778943], [384.0, 483.8096831596313, 609.5620039557886]]
 
     USE_PAFPN = False
     PAFPN_FEATURE_MAP_SIZE = [96, 288]
@@ -46,7 +46,7 @@ class Config(object):
     # Size of the top-down layers used to build the feature pyramid
     TOP_DOWN_PYRAMID_SIZE = 256
 
-    PREDICT_MASK = False
+    PREDICT_MASK = True
     # Pooled ROIs
     MASK_POOL_SIZE = 7
 
@@ -70,8 +70,8 @@ class Config(object):
     INCLUDE_VARIANCES = True # Include variance to bounding boxes or not.
 
     # Allowed are : ['OHEM', 'FOCAL', 'CROSSENTROPY']
-    LOSS_CLASSIFICATION = 'FOCAL'
-    ACTIVATION = 'SIGMOID' # ['SOFTMAX', 'SIGMOID']
+    LOSS_CLASSIFICATION = 'OHEM'
+    ACTIVATION = 'SOFTMAX' # ['SOFTMAX', 'SIGMOID']
     NEG_POS_RATIO = 3 # For OHEM
     USE_MASK_IOU = False
 
@@ -81,7 +81,7 @@ class Config(object):
     # implementation.
     # Allowed optimizer: ['SGD', 'Adam', 'SGDW', 'AdamW', 'AdaBelief']
     OPTIMIZER = 'SGD'
-    LEARNING_RATE = 1e-2
+    LEARNING_RATE = 1e-4
     N_WARMUP_STEPS = 7393
     WARMUP_LR = 0.0
     LEARNING_MOMENTUM = 0.9

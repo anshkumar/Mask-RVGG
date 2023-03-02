@@ -59,12 +59,11 @@ class Loss(object):
         else:
             conf_loss = self._focal_conf_loss()
 
+        mask_loss = [tf.constant(0.0)]
         if self.config.PREDICT_MASK:
-            mask_loss, mask_iou_loss = self._loss_mask() 
-        else:
-            mask_loss, mask_iou_loss = [0.0], [0.0]
-        
-        return loc_loss, conf_loss, mask_loss, mask_iou_loss
+            mask_loss = self._loss_mask() 
+
+        return loc_loss, conf_loss, mask_loss
 
     def _loss_location(self, sigma=3.0):
         sigma_squared = sigma ** 2
@@ -91,10 +90,14 @@ class Loss(object):
         smoothl1loss = tf.keras.losses.Huber(delta=1., reduction=tf.keras.losses.Reduction.NONE)
         if tf.reduce_sum(tf.cast(num_pos, tf.float32)) > 0.0:
             loss_loc = smoothl1loss(gt_offset, pred_offset)
+            loss_loc = tf.math.divide_no_nan(tf.reduce_sum(loss_loc), num_pos)
         else:
-            loss_loc = 0.0
-        tf.debugging.assert_all_finite(loss_loc, "Loss Location NaN/Inf")
-        return [tf.math.divide_no_nan(tf.reduce_sum(loss_loc), num_pos)*self._loss_weight_box]
+            loss_loc = tf.constant(0.0)
+
+        if tf.math.is_nan(loss_loc):
+            return [tf.constant(0.0)]
+        else:
+            return [loss_loc*self._loss_weight_box]
 
     def _focal_conf_loss(self, alpha=0.25, gamma=2.0):
         """
@@ -185,8 +188,11 @@ class Loss(object):
                 reduction=tf.keras.losses.Reduction.NONE)
             loss_conf = tf.reduce_sum(cce(target_labels, target_logits)) / tf.reduce_sum(tf.cast(num_pos, tf.float32)+tf.cast(num_neg, tf.float32))
         else:
-            loss_conf = 0.0
-        return [loss_conf*self._loss_weight_cls]
+            loss_conf = tf.constant(0.0)
+        if tf.math.is_nan(loss_conf):
+            return [tf.constant(0.0)]
+        else:
+            return [loss_conf*self._loss_weight_cls]
 
     def _loss_mask(self):
         
@@ -226,12 +232,11 @@ class Loss(object):
         cce = tf.keras.losses.BinaryCrossentropy(from_logits=False,
             reduction=tf.keras.losses.Reduction.NONE)
         loss = cce(pos_gt_masks, pos_p_masks)
-        tf.debugging.assert_all_finite(loss, "Loss Mask NaN/Inf")
         loss = tf.reduce_mean(loss)
         if tf.math.is_nan(loss):
-            return [0.0], [0.0]
+            return [tf.constant(0.0)]
         else:
-            return [loss*self._loss_weight_mask], [0.0]
+            return [loss*self._loss_weight_mask]
 
         '''
         pred_bbox = tf.reshape(self.pred_bbox, (-1, 4))

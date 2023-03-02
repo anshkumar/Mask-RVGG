@@ -274,9 +274,6 @@ def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
         tf.summary.scalar('Mask loss', 
           metrics.mask.result(), step=iterations)
 
-        tf.summary.scalar('Mask IOU loss', 
-          metrics.mask_iou.result(), step=iterations)
-
       with tf.name_scope("norm"):
         tf.summary.scalar('Global Norm', 
           metrics.global_norm.result(), step=iterations)
@@ -284,7 +281,7 @@ def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
     if iterations and iterations % FLAGS.print_interval == 0:
         logging.info(
             ("Iteration {}, LR: {}, Total Loss: {:.4f}, B: {:.4f},  "
-              "C: {:.4f}, M: {:.4f}, I: {:.4f}, "
+              "C: {:.4f}, M: {:.4f}, "
               "global_norm:{:.4f} ({:.1f} seconds)").format(
             iterations,
             decayed_lr,
@@ -292,7 +289,6 @@ def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
             metrics.loc.result(),
             metrics.conf.result(),
             metrics.mask.result(),
-            metrics.mask_iou.result(),
             metrics.global_norm.result(),
             time.time()-train_tic
         ))
@@ -300,7 +296,6 @@ def update_train_losses(train_summary_writer, iterations, metrics, decayed_lr):
         metrics.loc.reset_states()
         metrics.conf.reset_states()
         metrics.mask.reset_states()
-        metrics.mask_iou.reset_states()
         metrics.global_norm.reset_states()
         train_tic = time.time()
         
@@ -370,9 +365,6 @@ def update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, co
         tf.summary.scalar('V Mask loss', 
           metrics.v_mask.result(), step=iterations)
 
-        tf.summary.scalar('V Mask IOU loss', 
-          metrics.v_mask_iou.result(), step=iterations)
-
       with tf.name_scope("precision"):
         tf.summary.scalar('Precision mAP', 
           metrics.precision_mAP.result(), step=iterations)
@@ -412,7 +404,7 @@ def update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, co
           metrics.recall_AR_100_large.result(), step=iterations)
 
     train_template = ("Iteration {}, Train Loss: {}, Loc Loss: {},  "
-      "Conf Loss: {}, Mask Loss: {}, Mask IOU Loss: {}, "
+      "Conf Loss: {}, Mask Loss: {}, "
       "Global Norm: {}")
 
     valid_template = ("Iteration {}, Precision mAP: {}, Precision "
@@ -421,14 +413,13 @@ def update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, co
       " recall AR@1: {}, recall AR@10: {}, recall AR@100: {}, recall "
       "AR@100 (small): {}, recall AR@100 (medium): {}, recall AR@100 "
       "(large): {}\nValid Loss: {}, V Loc Loss: {},  "
-      "V Conf Loss: {}, V Mask Loss: {}, V Mask IOU Loss: {}")
+      "V Conf Loss: {}, V Mask Loss: {}")
 
     logging.info(train_template.format(iterations + 1,
                                 metrics.train_loss.result(),
                                 metrics.loc.result(),
                                 metrics.conf.result(),
                                 metrics.mask.result(),
-                                metrics.mask_iou.result(),
                                 metrics.global_norm.result()))
     logging.info(valid_template.format(iterations + 1,
                                 metrics.precision_mAP.result(),
@@ -446,8 +437,7 @@ def update_val_losses(test_summary_writer, iterations, metrics, coco_metrics, co
                                 metrics.valid_loss.result(),
                                 metrics.v_loc.result(),
                                 metrics.v_conf.result(),
-                                metrics.v_mask.result(),
-                                metrics.v_mask_iou.result()))
+                                metrics.v_mask.result()))
 
 def draw_contours(image, num, boxes, classes, scores, masks, config, is_gt):
   for i in range(num):
@@ -509,7 +499,6 @@ def add_to_coco_evaluator(valid_image, valid_labels, output, config , coco_evalu
 
     if config.PREDICT_MASK:
       det_masks = output['detection_masks'][0][:det_num].numpy()
-      det_masks = (det_masks > 0.5).astype("uint8")
       det_masked_image = np.zeros((det_num, _h, _w), dtype=np.uint8)
       for _b in range(det_num):
           box = det_boxes[_b]
@@ -521,6 +510,7 @@ def add_to_coco_evaluator(valid_image, valid_labels, output, config , coco_evalu
           boxH = endY - startY
           if boxW > 0 and boxH > 0:
             _m = cv2.resize(_m, (boxW, boxH))
+            _m = (_m > 0.5).astype("uint8")
             det_masked_image[_b][startY:endY, startX:endX] = _m
       coco_evaluator.add_single_detected_image_info(
           image_id='image'+str(image_id),
@@ -643,6 +633,7 @@ def main(argv):
     best_val = 1e10
     iterations = checkpoint.step.numpy()
 
+    @tf.function
     def train_step(image, labels):
         clip_factor=0.01
         eps=1e-3
@@ -653,22 +644,19 @@ def main(argv):
                       'remapping': True}):
             with tf.GradientTape() as tape:
                 output = model([image, labels['boxes_norm']], training=True)
-
-                loc_loss, conf_loss, mask_loss, mask_iou_loss, \
+                loc_loss, conf_loss, mask_loss, \
                     = criterion(model, output, labels, config.NUM_CLASSES+1, image)
 
                 if FLAGS.multi_gpu:
                     loc_loss = tf.nn.compute_average_loss(loc_loss, global_batch_size=global_batch_size)
                     conf_loss = tf.nn.compute_average_loss(conf_loss, global_batch_size=global_batch_size)
                     mask_loss = tf.nn.compute_average_loss(mask_loss, global_batch_size=global_batch_size)
-                    mask_iou_loss = tf.nn.compute_average_loss(mask_iou_loss, global_batch_size=global_batch_size) 
-                    total_loss = loc_loss + conf_loss + mask_loss + mask_iou_loss
+                    total_loss = loc_loss + conf_loss + mask_loss
                 else:
-                    total_loss = tf.reduce_sum(loc_loss + conf_loss + mask_loss + mask_iou_loss)
+                    total_loss = tf.reduce_sum(loc_loss + conf_loss + mask_loss)
                     loc_loss = tf.reduce_sum(loc_loss)
                     conf_loss = tf.reduce_sum(conf_loss)
                     mask_loss = tf.reduce_sum(mask_loss)
-                    mask_iou_loss = tf.reduce_sum(mask_iou_loss)
             grads = tape.gradient(total_loss, model.trainable_variables)
             if config.USE_AGC:
               agc_gradients = adaptive_clip_grad(model.trainable_variables, grads, 
@@ -679,7 +667,7 @@ def main(argv):
               optimizer.apply_gradients(zip(grads, model.trainable_variables))
               metrics.global_norm.update_state(tf.linalg.global_norm(grads))
 
-            return (loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads)
+            return (loc_loss, conf_loss, mask_loss, total_loss, grads)
 
     @tf.function
     def distributed_train_step(image, labels):
@@ -696,14 +684,13 @@ def main(argv):
         iterations += 1
         
         if FLAGS.multi_gpu:
-            loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads = distributed_train_step(image, labels)
+            loc_loss, conf_loss, mask_loss, total_loss, grads = distributed_train_step(image, labels)
         else:
-            loc_loss, conf_loss, mask_loss, mask_iou_loss, total_loss, grads = train_step(image, labels)
+            loc_loss, conf_loss, mask_loss, total_loss, grads = train_step(image, labels)
         metrics.train_loss.update_state(total_loss)
         metrics.loc.update_state(loc_loss)
         metrics.conf.update_state(conf_loss)
         metrics.mask.update_state(mask_loss)
-        metrics.mask_iou.update_state(mask_iou_loss)
         update_train_losses(train_summary_writer, iterations, metrics, optimizer.lr.numpy())
 
         if iterations and iterations % FLAGS.save_interval == 0:
@@ -722,16 +709,14 @@ def main(argv):
                 # calculate validation loss
                 output = model([valid_image, valid_labels['boxes_norm']], training=False)
 
-                valid_loc_loss, valid_conf_loss, valid_mask_loss, \
-                valid_mask_iou_loss = \
+                valid_loc_loss, valid_conf_loss, valid_mask_loss = \
                 criterion(model, output, valid_labels, config.NUM_CLASSES+1)
 
-                valid_total_loss = sum(valid_loc_loss + valid_conf_loss + valid_mask_loss + valid_mask_iou_loss)
+                valid_total_loss = sum(valid_loc_loss + valid_conf_loss + valid_mask_loss)
                 metrics.valid_loss.update_state(valid_total_loss)
                 metrics.v_loc.update_state(valid_loc_loss)
                 metrics.v_conf.update_state(valid_conf_loss)
                 metrics.v_mask.update_state(valid_mask_loss)
-                metrics.v_mask_iou.update_state(valid_mask_iou_loss)
                 
                 debug_image = add_to_coco_evaluator(tf.cast(valid_image[0], dtype=tf.uint8), valid_labels, output, config , coco_evaluator, valid_image.shape[1], valid_image.shape[2])
                 debug_images.append(debug_image)

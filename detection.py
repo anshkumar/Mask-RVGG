@@ -56,7 +56,6 @@ class Detect(object):
         # get the max score class of 27429 predicted boxes
         class_p_max = tf.reduce_max(class_p, axis=-1)
         batch_size = tf.shape(class_p_max)[0]
-
         detection_boxes = tf.zeros((batch_size, self.max_output_size, 4), tf.float32)
         detection_classes = tf.zeros((batch_size, self.max_output_size), tf.float32)
         detection_scores = tf.zeros((batch_size, self.max_output_size), tf.float32)
