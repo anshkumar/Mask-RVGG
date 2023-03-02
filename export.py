@@ -41,7 +41,7 @@ class Model(MaskRVGG):
         pred.update(self.detect(pred))
         if self.config.PREDICT_MASK:
             masks = self.mask_head(pred['detection_boxes'],
-                            features[:-2],
+                            features,
                             self.num_classes,
                             self.config,
                             training)
